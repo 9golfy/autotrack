@@ -39,6 +39,17 @@ type FirebaseEventRecord = {
   createdAtLabel: string;
 };
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) => {
+      window.setTimeout(() => {
+        reject(new Error(message));
+      }, timeoutMs);
+    }),
+  ]);
+}
+
 function truncate(value: string | null | undefined, head = 22, tail = 10) {
   if (!value) {
     return "Unavailable";
@@ -132,7 +143,11 @@ export default function MiniTestPage() {
         limit(8),
       );
 
-      const snapshot = await getDocs(eventQuery);
+      const snapshot = await withTimeout(
+        getDocs(eventQuery),
+        12000,
+        "Firestore read timed out. Check Firestore database, rules, or webview network behavior.",
+      );
       const records = snapshot.docs.map((doc) => {
         const data = doc.data() as {
           displayName?: string | null;
@@ -159,7 +174,11 @@ export default function MiniTestPage() {
       setFirebaseEvents(records);
     } catch (error) {
       console.error(error);
-      setFirebaseStatus("Unable to read Firestore. Check Firebase env vars and Firestore rules.");
+      setFirebaseStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to read Firestore. Check Firebase env vars and Firestore rules.",
+      );
     }
   }
 
@@ -178,23 +197,31 @@ export default function MiniTestPage() {
 
     try {
       const db = getFirebaseDb();
-      await addDoc(collection(db, "mini_app_events"), {
-        eventType: "autocheckuser-session",
-        displayName: profile.displayName ?? null,
-        userId: profile.userId ?? null,
-        statusMessage: profile.statusMessage ?? null,
-        pictureUrl: profile.pictureUrl ?? null,
-        accessTokenPreview: accessToken ? truncate(accessToken, 18, 10) : null,
-        source: "autocheckuser",
-        createdAt: serverTimestamp(),
-        createdAtClient: new Date().toISOString(),
-      });
+      await withTimeout(
+        addDoc(collection(db, "mini_app_events"), {
+          eventType: "autocheckuser-session",
+          displayName: profile.displayName ?? null,
+          userId: profile.userId ?? null,
+          statusMessage: profile.statusMessage ?? null,
+          pictureUrl: profile.pictureUrl ?? null,
+          accessTokenPreview: accessToken ? truncate(accessToken, 18, 10) : null,
+          source: "autocheckuser",
+          createdAt: serverTimestamp(),
+          createdAtClient: new Date().toISOString(),
+        }),
+        12000,
+        "Firestore write timed out. Create Firestore Database and relax Rules for testing first.",
+      );
 
       setFirebaseStatus("Saved LIFF session snapshot to Firestore.");
       await loadFirebaseEvents();
     } catch (error) {
       console.error(error);
-      setFirebaseStatus("Failed to write to Firestore. Review Firebase config and security rules.");
+      setFirebaseStatus(
+        error instanceof Error
+          ? error.message
+          : "Failed to write to Firestore. Review Firebase config and security rules.",
+      );
     } finally {
       setIsSyncingFirebase(false);
     }
