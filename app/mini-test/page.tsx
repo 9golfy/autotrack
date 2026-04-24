@@ -414,8 +414,8 @@ export default function MiniTestPage() {
               <p className="mt-4 text-sm leading-6 text-slate-600">
                 Open this route inside LINE after setting the LIFF endpoint to
                 `https://autotrack-phi.vercel.app/mini-test`. The server route expects
-                `LINE_LOGIN_CHANNEL_ID` and `LINE_LOGIN_CHANNEL_SECRET` to be configured in
-                Vercel.
+                `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`, `LINE_SERVICE_CHANNEL_ID`,
+                and `LINE_SERVICE_CHANNEL_SECRET` to be configured in Vercel.
               </p>
             </section>
 

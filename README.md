@@ -27,6 +27,8 @@ LINE_MESSAGING_CHANNEL_ACCESS_TOKEN=""
 LINE_MESSAGING_CHANNEL_SECRET=""
 LINE_LOGIN_CHANNEL_ID=""
 LINE_LOGIN_CHANNEL_SECRET=""
+LINE_SERVICE_CHANNEL_ID=""
+LINE_SERVICE_CHANNEL_SECRET=""
 LINE_TARGET_ID=""
 NEXT_PUBLIC_LIFF_ID=""
 NEXT_PUBLIC_SUPABASE_URL=""
@@ -59,14 +61,21 @@ https://your-app.vercel.app/api/line/webhook
 https://your-app.vercel.app/liff
 ```
 
-6. For `AutoCheckUser` service-message testing, use the LINE Login / LIFF channel credentials:
+6. For `AutoCheckUser` LIFF verification, use the LINE Login / LIFF channel credentials:
 
 ```text
 LINE_LOGIN_CHANNEL_ID
 LINE_LOGIN_CHANNEL_SECRET
 ```
 
-7. For webhook and push messaging, use the Messaging API channel credentials:
+7. For `AutoCheckUser` service-message delivery, use the LINE MINI App channel credentials:
+
+```text
+LINE_SERVICE_CHANNEL_ID
+LINE_SERVICE_CHANNEL_SECRET
+```
+
+8. For webhook and push messaging, use the Messaging API channel credentials:
 
 ```text
 LINE_MESSAGING_CHANNEL_SECRET

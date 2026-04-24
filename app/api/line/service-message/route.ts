@@ -85,15 +85,26 @@ async function issueServiceNotificationToken(channelAccessToken: string, liffAcc
 }
 
 export async function POST(request: NextRequest) {
-  const channelId = (process.env.LINE_LOGIN_CHANNEL_ID ?? process.env.LINE_CHANNEL_ID)?.trim();
-  const channelSecret =
+  const loginChannelId = (process.env.LINE_LOGIN_CHANNEL_ID ?? process.env.LINE_CHANNEL_ID)?.trim();
+  const loginChannelSecret =
     (process.env.LINE_LOGIN_CHANNEL_SECRET ?? process.env.LINE_CHANNEL_SECRET)?.trim();
+  const serviceChannelId = process.env.LINE_SERVICE_CHANNEL_ID?.trim();
+  const serviceChannelSecret = process.env.LINE_SERVICE_CHANNEL_SECRET?.trim();
 
-  if (!channelId || !channelSecret) {
+  if (!loginChannelId || !loginChannelSecret) {
     return NextResponse.json(
       {
         error:
           "Missing LINE_LOGIN_CHANNEL_ID (or LINE_CHANNEL_ID) or LINE_LOGIN_CHANNEL_SECRET (or LINE_CHANNEL_SECRET)",
+      },
+      { status: 500 },
+    );
+  }
+
+  if (!serviceChannelId || !serviceChannelSecret) {
+    return NextResponse.json(
+      {
+        error: "Missing LINE_SERVICE_CHANNEL_ID or LINE_SERVICE_CHANNEL_SECRET",
       },
       { status: 500 },
     );
@@ -116,11 +127,14 @@ export async function POST(request: NextRequest) {
   try {
     const verifiedChannelId = await verifyLiffAccessToken(liffAccessToken);
 
-    if (verifiedChannelId !== channelId) {
+    if (verifiedChannelId !== loginChannelId) {
       return NextResponse.json({ error: "Invalid LIFF access token" }, { status: 401 });
     }
 
-    const channelAccessToken = await issueChannelAccessToken(channelId, channelSecret);
+    const channelAccessToken = await issueChannelAccessToken(
+      serviceChannelId,
+      serviceChannelSecret,
+    );
     const notificationToken = await issueServiceNotificationToken(
       channelAccessToken,
       liffAccessToken,
