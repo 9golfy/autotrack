@@ -34,7 +34,6 @@ export function getFirebaseDb() {
   try {
     return initializeFirestore(app, {
       experimentalAutoDetectLongPolling: true,
-      useFetchStreams: false,
     });
   } catch {
     return getFirestore(app);
