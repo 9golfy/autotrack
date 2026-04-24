@@ -17,6 +17,8 @@ model Message {
   email      String?
   statusMessage String?
   pictureUrl String?
+  contentUrl String?
+  contentMimeType String?
   source     String   @default("unknown")
   text       String?
   type       String

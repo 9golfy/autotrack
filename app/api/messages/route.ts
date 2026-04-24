@@ -54,6 +54,8 @@ export async function POST(request: Request) {
       email?: string;
       statusMessage?: string;
       pictureUrl?: string;
+      contentUrl?: string;
+      contentMimeType?: string;
       text?: string;
       source?: string;
       groupId?: string;
@@ -76,6 +78,8 @@ export async function POST(request: Request) {
         email: body.email ?? null,
         statusMessage: body.statusMessage ?? null,
         pictureUrl: body.pictureUrl ?? null,
+        contentUrl: body.contentUrl ?? null,
+        contentMimeType: body.contentMimeType ?? null,
         source: body.source ?? "liff",
         text: body.text ?? null,
         type: body.event ?? "liff-profile",

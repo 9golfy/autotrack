@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,11 @@ type LineWebhookBody = {
   events?: LineWebhookEvent[];
 };
 
+type UploadedLineContent = {
+  contentUrl: string | null;
+  contentMimeType: string | null;
+};
+
 function verifySignature(body: string, signature: string | null) {
   const secret =
     process.env.LINE_MESSAGING_CHANNEL_SECRET ?? process.env.LINE_CHANNEL_SECRET;
@@ -41,6 +47,80 @@ function verifySignature(body: string, signature: string | null) {
   }
 
   return timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
+}
+
+function getLineMessagingAccessToken() {
+  return (
+    process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN ?? process.env.LINE_CHANNEL_ACCESS_TOKEN ?? ""
+  ).trim();
+}
+
+function getFileExtension(contentType: string) {
+  const normalizedType = contentType.split(";")[0].trim().toLowerCase();
+
+  switch (normalizedType) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/gif":
+      return "gif";
+    case "image/webp":
+      return "webp";
+    default:
+      return "bin";
+  }
+}
+
+async function uploadLineImageContent(messageId: string): Promise<UploadedLineContent> {
+  const accessToken = getLineMessagingAccessToken();
+  const bucketName = (process.env.LINE_MEDIA_BUCKET ?? "line-media").trim();
+
+  if (!accessToken) {
+    console.warn("Missing LINE messaging access token; skipping image download");
+    return { contentUrl: null, contentMimeType: null };
+  }
+
+  try {
+    const response = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      console.error("Failed to fetch LINE content", await response.text());
+      return { contentUrl: null, contentMimeType: null };
+    }
+
+    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+    const fileExtension = getFileExtension(contentType);
+    const filePath = `line-webhook/${messageId}.${fileExtension}`;
+    const fileBuffer = await response.arrayBuffer();
+
+    const supabase = getSupabaseAdminClient();
+    const uploadResult = await supabase.storage.from(bucketName).upload(filePath, fileBuffer, {
+      contentType,
+      upsert: true,
+    });
+
+    if (uploadResult.error) {
+      console.error("Failed to upload LINE content to Supabase Storage", uploadResult.error);
+      return { contentUrl: null, contentMimeType: contentType };
+    }
+
+    const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+
+    return {
+      contentUrl: data.publicUrl,
+      contentMimeType: contentType,
+    };
+  } catch (error) {
+    console.error("Unexpected LINE image upload error", error);
+    return { contentUrl: null, contentMimeType: null };
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -65,17 +145,36 @@ export async function POST(request: NextRequest) {
 
   if (messageEvents.length > 0) {
     try {
+      const uploadedContentByMessageId = new Map<string, UploadedLineContent>();
+
+      for (const event of messageEvents) {
+        if (event.message?.type === "image" && event.message.id) {
+          uploadedContentByMessageId.set(
+            event.message.id,
+            await uploadLineImageContent(event.message.id),
+          );
+        }
+      }
+
       await prisma.message.createMany({
-        data: messageEvents.map((event) => ({
-          messageId: event.message?.id ?? event.webhookEventId ?? randomUUID(),
-          userId: event.source?.userId ?? null,
-          groupId: event.source?.groupId ?? event.source?.roomId ?? null,
-          source: "webhook",
-          text: event.message?.type === "text" ? event.message.text ?? null : null,
-          type: event.message?.type ?? "unknown",
-          rawPayload: event,
-          timestamp: BigInt(event.timestamp ?? Date.now()),
-        })),
+        data: messageEvents.map((event) => {
+          const uploadedContent = event.message?.id
+            ? uploadedContentByMessageId.get(event.message.id)
+            : undefined;
+
+          return {
+            messageId: event.message?.id ?? event.webhookEventId ?? randomUUID(),
+            userId: event.source?.userId ?? null,
+            groupId: event.source?.groupId ?? event.source?.roomId ?? null,
+            source: "webhook",
+            text: event.message?.type === "text" ? event.message.text ?? null : null,
+            contentUrl: uploadedContent?.contentUrl ?? null,
+            contentMimeType: uploadedContent?.contentMimeType ?? null,
+            type: event.message?.type ?? "unknown",
+            rawPayload: event,
+            timestamp: BigInt(event.timestamp ?? Date.now()),
+          };
+        }),
         skipDuplicates: false,
       });
     } catch (error) {

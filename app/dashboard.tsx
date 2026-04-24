@@ -11,6 +11,8 @@ type MessageRecord = {
   email: string | null;
   statusMessage: string | null;
   pictureUrl: string | null;
+  contentUrl: string | null;
+  contentMimeType: string | null;
   source: string;
   text: string | null;
   type: string;
@@ -349,6 +351,21 @@ export function Dashboard() {
                               <p className="text-sm font-medium text-slate-900">
                                 {message.text || `${message.type} event captured`}
                               </p>
+                              {message.type === "image" && message.contentUrl ? (
+                                <a
+                                  href={message.contentUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-3 block"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={message.contentUrl}
+                                    alt="LINE upload"
+                                    className="max-h-64 rounded-2xl border border-slate-200 object-cover"
+                                  />
+                                </a>
+                              ) : null}
                               <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
                                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
                                   {message.source}
@@ -367,6 +384,11 @@ export function Dashboard() {
                                 {message.email ? (
                                   <span className="rounded-full bg-white px-2.5 py-1">
                                     {message.email}
+                                  </span>
+                                ) : null}
+                                {message.contentMimeType ? (
+                                  <span className="rounded-full bg-white px-2.5 py-1">
+                                    {message.contentMimeType}
                                   </span>
                                 ) : null}
                                 {message.groupId ? (
