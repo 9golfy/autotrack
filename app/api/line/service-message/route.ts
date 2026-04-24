@@ -85,12 +85,16 @@ async function issueServiceNotificationToken(channelAccessToken: string, liffAcc
 }
 
 export async function POST(request: NextRequest) {
-  const channelId = process.env.LINE_CHANNEL_ID?.trim();
-  const channelSecret = process.env.LINE_CHANNEL_SECRET?.trim();
+  const channelId = (process.env.LINE_LOGIN_CHANNEL_ID ?? process.env.LINE_CHANNEL_ID)?.trim();
+  const channelSecret =
+    (process.env.LINE_LOGIN_CHANNEL_SECRET ?? process.env.LINE_CHANNEL_SECRET)?.trim();
 
   if (!channelId || !channelSecret) {
     return NextResponse.json(
-      { error: "Missing LINE_CHANNEL_ID or LINE_CHANNEL_SECRET" },
+      {
+        error:
+          "Missing LINE_LOGIN_CHANNEL_ID (or LINE_CHANNEL_ID) or LINE_LOGIN_CHANNEL_SECRET (or LINE_CHANNEL_SECRET)",
+      },
       { status: 500 },
     );
   }

@@ -16,12 +16,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
   }
 
-  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const accessToken =
+    process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN ?? process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const targetId = process.env.LINE_TARGET_ID;
 
   if (!accessToken || !targetId) {
     return NextResponse.json(
-      { error: "Missing LINE_CHANNEL_ACCESS_TOKEN or LINE_TARGET_ID" },
+      {
+        error:
+          "Missing LINE_MESSAGING_CHANNEL_ACCESS_TOKEN (or LINE_CHANNEL_ACCESS_TOKEN) or LINE_TARGET_ID",
+      },
       { status: 500 },
     );
   }

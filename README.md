@@ -22,10 +22,15 @@ Create a `.env` file with:
 
 ```env
 DATABASE_URL="YOUR_SUPABASE_DATABASE_URL"
-LINE_CHANNEL_ACCESS_TOKEN=""
-LINE_CHANNEL_SECRET=""
+DIRECT_URL="YOUR_SUPABASE_DIRECT_URL"
+LINE_MESSAGING_CHANNEL_ACCESS_TOKEN=""
+LINE_MESSAGING_CHANNEL_SECRET=""
+LINE_LOGIN_CHANNEL_ID=""
+LINE_LOGIN_CHANNEL_SECRET=""
 LINE_TARGET_ID=""
 NEXT_PUBLIC_LIFF_ID=""
+NEXT_PUBLIC_SUPABASE_URL=""
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=""
 ```
 
 ## Local setup
@@ -54,11 +59,25 @@ https://your-app.vercel.app/api/line/webhook
 https://your-app.vercel.app/liff
 ```
 
+6. For `AutoCheckUser` service-message testing, use the LINE Login / LIFF channel credentials:
+
+```text
+LINE_LOGIN_CHANNEL_ID
+LINE_LOGIN_CHANNEL_SECRET
+```
+
+7. For webhook and push messaging, use the Messaging API channel credentials:
+
+```text
+LINE_MESSAGING_CHANNEL_SECRET
+LINE_MESSAGING_CHANNEL_ACCESS_TOKEN
+```
+
 ## Deployment
 
 1. Push the `autotrack` folder to GitHub.
 2. Import the repository into Vercel.
-3. Add all five environment variables in Vercel.
+3. Add the required environment variables in Vercel.
 4. Deploy.
 
 ## Demo flow

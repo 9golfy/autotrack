@@ -28,7 +28,8 @@ type LineWebhookBody = {
 };
 
 function verifySignature(body: string, signature: string | null) {
-  const secret = process.env.LINE_CHANNEL_SECRET;
+  const secret =
+    process.env.LINE_MESSAGING_CHANNEL_SECRET ?? process.env.LINE_CHANNEL_SECRET;
 
   if (!secret || !signature) {
     return false;
