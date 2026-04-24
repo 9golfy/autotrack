@@ -6,9 +6,6 @@ import {
   addDoc,
   collection,
   getDocs,
-  limit,
-  orderBy,
-  query,
   serverTimestamp,
 } from "firebase/firestore";
 
@@ -37,6 +34,7 @@ type FirebaseEventRecord = {
   accessTokenPreview: string | null;
   eventType: string;
   createdAtLabel: string;
+  createdAtSort: number;
 };
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
@@ -130,25 +128,20 @@ export default function MiniTestPage() {
     void loadFirebaseEvents();
   }, []);
 
-  async function loadFirebaseEvents() {
+async function loadFirebaseEvents() {
     if (!hasFirebaseConfig()) {
       return;
     }
 
     try {
       const db = getFirebaseDb();
-      const eventQuery = query(
-        collection(db, "mini_app_events"),
-        orderBy("createdAt", "desc"),
-        limit(8),
-      );
-
       const snapshot = await withTimeout(
-        getDocs(eventQuery),
+        getDocs(collection(db, "mini_app_events")),
         12000,
         "Firestore read timed out. Check Firestore database, rules, or webview network behavior.",
       );
-      const records = snapshot.docs.map((doc) => {
+      const records = snapshot.docs
+        .map((doc) => {
         const data = doc.data() as {
           displayName?: string | null;
           userId?: string | null;
@@ -168,8 +161,11 @@ export default function MiniTestPage() {
           createdAtLabel: data.createdAtClient
             ? new Date(data.createdAtClient).toLocaleString()
             : "Pending timestamp",
+          createdAtSort: data.createdAtClient ? new Date(data.createdAtClient).getTime() : 0,
         };
-      });
+        })
+        .sort((left, right) => right.createdAtSort - left.createdAtSort)
+        .slice(0, 8);
 
       setFirebaseEvents(records);
     } catch (error) {
@@ -197,6 +193,7 @@ export default function MiniTestPage() {
 
     try {
       const db = getFirebaseDb();
+      const createdAtClient = new Date().toISOString();
       await withTimeout(
         addDoc(collection(db, "mini_app_events"), {
           eventType: "autocheckuser-session",
@@ -207,14 +204,30 @@ export default function MiniTestPage() {
           accessTokenPreview: accessToken ? truncate(accessToken, 18, 10) : null,
           source: "autocheckuser",
           createdAt: serverTimestamp(),
-          createdAtClient: new Date().toISOString(),
+          createdAtClient,
         }),
         12000,
         "Firestore write timed out. Create Firestore Database and relax Rules for testing first.",
       );
 
       setFirebaseStatus("Saved LIFF session snapshot to Firestore.");
-      await loadFirebaseEvents();
+      setFirebaseEvents((current) =>
+        [
+          {
+            id: `local-${createdAtClient}`,
+            displayName: profile.displayName ?? null,
+            userId: profile.userId ?? null,
+            statusMessage: profile.statusMessage ?? null,
+            accessTokenPreview: accessToken ? truncate(accessToken, 18, 10) : null,
+            eventType: "autocheckuser-session",
+            createdAtLabel: new Date(createdAtClient).toLocaleString(),
+            createdAtSort: new Date(createdAtClient).getTime(),
+          },
+          ...current,
+        ]
+          .sort((left, right) => right.createdAtSort - left.createdAtSort)
+          .slice(0, 8),
+      );
     } catch (error) {
       console.error(error);
       setFirebaseStatus(
