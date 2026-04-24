@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AutoTrack
 
-## Getting Started
+AutoTrack is a one-page investor demo that connects a LINE Official Account to a Next.js app. It can:
 
-First, run the development server:
+- send text messages from the web UI to LINE
+- run a LIFF mini-app frontend inside the LINE client
+- receive LINE webhook messages
+- store message activity in Supabase PostgreSQL via Prisma
+- display synced messages in a clean dashboard
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Stack
+
+- Next.js App Router with TypeScript
+- Tailwind CSS
+- Prisma ORM
+- Supabase PostgreSQL
+- Deploy target: Vercel
+
+## Environment variables
+
+Create a `.env` file with:
+
+```env
+DATABASE_URL="YOUR_SUPABASE_DATABASE_URL"
+LINE_CHANNEL_ACCESS_TOKEN=""
+LINE_CHANNEL_SECRET=""
+LINE_TARGET_ID=""
+NEXT_PUBLIC_LIFF_ID=""
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Local setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npx prisma generate
+npx prisma migrate dev --name init
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## LINE setup
 
-## Learn More
+1. Enable the Messaging API in your LINE Official Account.
+2. Enable webhook delivery.
+3. Set the webhook URL to:
 
-To learn more about Next.js, take a look at the following resources:
+```text
+https://your-app.vercel.app/api/line/webhook
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Enable bot participation in group chats if you want to test group traffic.
+5. Create a LIFF app and set its endpoint URL to:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```text
+https://your-app.vercel.app/liff
+```
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Push the `autotrack` folder to GitHub.
+2. Import the repository into Vercel.
+3. Add all five environment variables in Vercel.
+4. Deploy.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Demo flow
+
+1. Open the web app.
+2. Send a text from the left panel.
+3. Confirm it arrives in LINE.
+4. Reply in LINE.
+5. Watch the right panel refresh from `/api/messages`.
+6. Open `/liff` inside the LINE app, let LIFF auto-login, and use the mini-app actions.
+7. Confirm the rows in Supabase.

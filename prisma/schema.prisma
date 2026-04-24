@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  messageId  String
+  userId     String?
+  groupId    String?
+  displayName String?
+  email      String?
+  statusMessage String?
+  pictureUrl String?
+  source     String   @default("unknown")
+  text       String?
+  type       String
+  rawPayload Json
+  timestamp  BigInt
+  createdAt  DateTime @default(now())
+
+  @@index([timestamp(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+}
