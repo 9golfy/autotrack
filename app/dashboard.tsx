@@ -18,6 +18,22 @@ type MessageRecord = {
   type: string;
   timestamp: string;
   createdAt: string;
+  rawPayload?: {
+    event?: {
+      message?: {
+        id?: string;
+      };
+    };
+    mediaUpload?: {
+      bucketName?: string | null;
+      storagePath?: string | null;
+      publicUrl?: string | null;
+      contentMimeType?: string | null;
+      fetchStatus?: number | null;
+      contentSizeBytes?: number | null;
+      error?: string | null;
+    } | null;
+  } | null;
 };
 
 type LocalPreview = {
@@ -366,6 +382,46 @@ export function Dashboard() {
                                   />
                                 </a>
                               ) : null}
+                              {message.type === "image" ? (
+                                <div className="mt-3 space-y-2 text-xs">
+                                  {message.rawPayload?.mediaUpload?.storagePath ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-600">
+                                      <p>
+                                        Storage path:{" "}
+                                        <span className="font-medium text-slate-900">
+                                          {message.rawPayload.mediaUpload.storagePath}
+                                        </span>
+                                      </p>
+                                      {message.rawPayload.mediaUpload.publicUrl ? (
+                                        <p className="mt-1 break-all">
+                                          Public URL:{" "}
+                                          <a
+                                            href={message.rawPayload.mediaUpload.publicUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="font-medium text-emerald-700 underline decoration-emerald-200 underline-offset-2"
+                                          >
+                                            {message.rawPayload.mediaUpload.publicUrl}
+                                          </a>
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                  {message.rawPayload?.event?.message?.id ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-slate-600">
+                                      LINE message ID:{" "}
+                                      <span className="font-medium text-slate-900">
+                                        {message.rawPayload.event.message.id}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                  {message.rawPayload?.mediaUpload?.error ? (
+                                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+                                      Upload debug: {message.rawPayload.mediaUpload.error}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
                                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
                                   {message.source}
@@ -389,6 +445,22 @@ export function Dashboard() {
                                 {message.contentMimeType ? (
                                   <span className="rounded-full bg-white px-2.5 py-1">
                                     {message.contentMimeType}
+                                  </span>
+                                ) : null}
+                                {message.rawPayload?.mediaUpload?.bucketName ? (
+                                  <span className="rounded-full bg-white px-2.5 py-1">
+                                    bucket {message.rawPayload.mediaUpload.bucketName}
+                                  </span>
+                                ) : null}
+                                {typeof message.rawPayload?.mediaUpload?.fetchStatus === "number" ? (
+                                  <span className="rounded-full bg-white px-2.5 py-1">
+                                    fetch {message.rawPayload.mediaUpload.fetchStatus}
+                                  </span>
+                                ) : null}
+                                {typeof message.rawPayload?.mediaUpload?.contentSizeBytes ===
+                                "number" ? (
+                                  <span className="rounded-full bg-white px-2.5 py-1">
+                                    {message.rawPayload.mediaUpload.contentSizeBytes} bytes
                                   </span>
                                 ) : null}
                                 {message.groupId ? (

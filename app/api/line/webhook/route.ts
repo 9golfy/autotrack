@@ -31,6 +31,11 @@ type LineWebhookBody = {
 type UploadedLineContent = {
   contentUrl: string | null;
   contentMimeType: string | null;
+  bucketName: string;
+  storagePath: string | null;
+  fetchStatus: number | null;
+  contentSizeBytes: number | null;
+  error: string | null;
 };
 
 function verifySignature(body: string, signature: string | null) {
@@ -78,7 +83,15 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
 
   if (!accessToken) {
     console.warn("Missing LINE messaging access token; skipping image download");
-    return { contentUrl: null, contentMimeType: null };
+    return {
+      contentUrl: null,
+      contentMimeType: null,
+      bucketName,
+      storagePath: null,
+      fetchStatus: null,
+      contentSizeBytes: null,
+      error: "Missing LINE messaging access token",
+    };
   }
 
   try {
@@ -91,14 +104,28 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
     });
 
     if (!response.ok) {
-      console.error("Failed to fetch LINE content", await response.text());
-      return { contentUrl: null, contentMimeType: null };
+      const errorBody = await response.text();
+      console.error("Failed to fetch LINE content", {
+        messageId,
+        status: response.status,
+        errorBody,
+      });
+      return {
+        contentUrl: null,
+        contentMimeType: null,
+        bucketName,
+        storagePath: null,
+        fetchStatus: response.status,
+        contentSizeBytes: null,
+        error: `LINE content fetch failed: ${response.status} ${errorBody}`.trim(),
+      };
     }
 
     const contentType = response.headers.get("content-type") ?? "application/octet-stream";
     const fileExtension = getFileExtension(contentType);
     const filePath = `line-webhook/${messageId}.${fileExtension}`;
     const fileBuffer = await response.arrayBuffer();
+    const contentSizeBytes = fileBuffer.byteLength;
 
     const supabase = getSupabaseAdminClient();
     const uploadResult = await supabase.storage.from(bucketName).upload(filePath, fileBuffer, {
@@ -107,19 +134,53 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
     });
 
     if (uploadResult.error) {
-      console.error("Failed to upload LINE content to Supabase Storage", uploadResult.error);
-      return { contentUrl: null, contentMimeType: contentType };
+      console.error("Failed to upload LINE content to Supabase Storage", {
+        messageId,
+        bucketName,
+        filePath,
+        error: uploadResult.error,
+      });
+      return {
+        contentUrl: null,
+        contentMimeType: contentType,
+        bucketName,
+        storagePath: filePath,
+        fetchStatus: response.status,
+        contentSizeBytes,
+        error: uploadResult.error.message,
+      };
     }
 
     const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+    console.info("Stored LINE image content", {
+      messageId,
+      bucketName,
+      filePath,
+      contentType,
+      contentSizeBytes,
+      publicUrl: data.publicUrl,
+    });
 
     return {
       contentUrl: data.publicUrl,
       contentMimeType: contentType,
+      bucketName,
+      storagePath: filePath,
+      fetchStatus: response.status,
+      contentSizeBytes,
+      error: null,
     };
   } catch (error) {
     console.error("Unexpected LINE image upload error", error);
-    return { contentUrl: null, contentMimeType: null };
+    return {
+      contentUrl: null,
+      contentMimeType: null,
+      bucketName,
+      storagePath: null,
+      fetchStatus: null,
+      contentSizeBytes: null,
+      error: error instanceof Error ? error.message : "Unexpected LINE image upload error",
+    };
   }
 }
 
@@ -171,7 +232,21 @@ export async function POST(request: NextRequest) {
             contentUrl: uploadedContent?.contentUrl ?? null,
             contentMimeType: uploadedContent?.contentMimeType ?? null,
             type: event.message?.type ?? "unknown",
-            rawPayload: event,
+            rawPayload: {
+              event,
+              mediaUpload:
+                event.message?.type === "image"
+                  ? {
+                      bucketName: uploadedContent?.bucketName ?? null,
+                      storagePath: uploadedContent?.storagePath ?? null,
+                      publicUrl: uploadedContent?.contentUrl ?? null,
+                      contentMimeType: uploadedContent?.contentMimeType ?? null,
+                      fetchStatus: uploadedContent?.fetchStatus ?? null,
+                      contentSizeBytes: uploadedContent?.contentSizeBytes ?? null,
+                      error: uploadedContent?.error ?? null,
+                    }
+                  : null,
+            },
             timestamp: BigInt(event.timestamp ?? Date.now()),
           };
         }),
