@@ -1,0 +1,597 @@
+"use client";
+
+/* eslint-disable @next/next/no-img-element */
+
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useState, type ReactNode } from "react";
+
+import { buildHealthReport } from "@/lib/health-report";
+import autoHealthLogo from "@/logo/Auto_Health_Logo_Horizontal_300.png";
+
+export type MessageRecord = {
+  id: string;
+  messageId: string;
+  userId: string | null;
+  groupId: string | null;
+  displayName: string | null;
+  email: string | null;
+  statusMessage: string | null;
+  pictureUrl: string | null;
+  avatarUrl?: string | null;
+  profileImageUrl?: string | null;
+  contentUrl: string | null;
+  contentMimeType: string | null;
+  source: string;
+  text: string | null;
+  type: string;
+  timestamp: string;
+  createdAt: string;
+  rawPayload?: {
+    lineIdentity?: {
+      groupName?: string | null;
+      error?: string | null;
+      pictureUrl?: string | null;
+    } | null;
+    mediaUpload?: {
+      error?: string | null;
+    } | null;
+  } | null;
+};
+
+export type GroupStatus = "Active" | "Needs Review" | "No Activity";
+export type HealthSignal = "Normal" | "Watch" | "Critical";
+
+export type GroupSummary = {
+  groupId: string;
+  groupName: string;
+  totalMessages: number;
+  memberCount: number;
+  lastMessageTime: number | null;
+  lastSync: string;
+  lastMessagePreview: string;
+  lastMessageType: string;
+  healthSignal: HealthSignal;
+  status: GroupStatus;
+  members: { userId: string; displayName: string; avatarUrl: string | null }[];
+};
+
+export type GroupFilters = {
+  search: string;
+  dateRange: "all" | "24h" | "7d" | "30d";
+  status: "all" | GroupStatus;
+  messageType: "all" | "text" | "image" | "link" | "other";
+};
+
+export type GroupConversation = {
+  summary: GroupSummary;
+  messages: MessageRecord[];
+};
+
+const statusToneMap: Record<GroupStatus, string> = {
+  Active: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  "Needs Review": "bg-amber-50 text-amber-700 ring-amber-100",
+  "No Activity": "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
+const healthSignalToneMap: Record<HealthSignal, string> = {
+  Normal: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  Watch: "bg-amber-50 text-amber-700 ring-amber-100",
+  Critical: "bg-rose-50 text-rose-700 ring-rose-100",
+};
+
+const typeToneMap: Record<string, string> = {
+  text: "bg-sky-50 text-sky-700",
+  image: "bg-violet-50 text-violet-700",
+  link: "bg-cyan-50 text-cyan-700",
+  outbound: "bg-emerald-50 text-emerald-700",
+  other: "bg-slate-100 text-slate-600",
+};
+
+function formatClock(timestamp: number) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
+}
+
+function formatDate(timestamp: number) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(timestamp);
+}
+
+function formatDateTime(timestamp: number) {
+  return `${formatDate(timestamp)} ${formatClock(timestamp)}`;
+}
+
+function truncate(value: string | null | undefined, head = 8, tail = 5) {
+  if (!value) {
+    return "Unavailable";
+  }
+
+  if (value.length <= head + tail + 3) {
+    return value;
+  }
+
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
+function getMessageDirection(message: MessageRecord) {
+  if (message.source === "web" || message.type === "outbound") {
+    return "outbound";
+  }
+
+  return "inbound";
+}
+
+function getAvatarUrl(message: MessageRecord) {
+  return (
+    message.pictureUrl ??
+    message.avatarUrl ??
+    message.profileImageUrl ??
+    message.rawPayload?.lineIdentity?.pictureUrl ??
+    null
+  );
+}
+
+function getDisplayName(message: MessageRecord) {
+  return message.displayName?.trim() || "Unknown user";
+}
+
+function getInitial(value: string | null | undefined) {
+  const initial = value?.trim().charAt(0);
+  return initial ? initial.toUpperCase() : "U";
+}
+
+function classifyMessageType(message: MessageRecord): "text" | "image" | "link" | "other" {
+  if (message.type === "image" || Boolean(message.contentUrl)) {
+    return "image";
+  }
+
+  if ((message.text ?? "").includes("http://") || (message.text ?? "").includes("https://")) {
+    return "link";
+  }
+
+  if (message.type === "text" || message.type === "outbound") {
+    return "text";
+  }
+
+  return "other";
+}
+
+function getMessagePreview(message: MessageRecord) {
+  if (message.text?.trim()) {
+    return message.text;
+  }
+
+  if (message.type === "image" || message.contentUrl) {
+    return "Image received";
+  }
+
+  return `${message.type} event captured`;
+}
+
+function getGroupName(message: MessageRecord) {
+  return (
+    message.rawPayload?.lineIdentity?.groupName?.trim() ||
+    `Group ${truncate(message.groupId, 6, 4)}`
+  );
+}
+
+function getGroupStatus(messages: MessageRecord[]): GroupStatus {
+  const latest = messages[0];
+
+  if (!latest) {
+    return "No Activity";
+  }
+
+  const ageMs = Date.now() - Number(latest.timestamp);
+  const oneHour = 1000 * 60 * 60;
+
+  if (ageMs <= oneHour) {
+    return "Active";
+  }
+
+  if (
+    messages.some(
+      (message) =>
+        Boolean(message.rawPayload?.lineIdentity?.error) ||
+        Boolean(message.rawPayload?.mediaUpload?.error),
+    )
+  ) {
+    return "Needs Review";
+  }
+
+  if (ageMs <= oneHour * 24) {
+    return "Needs Review";
+  }
+
+  return "No Activity";
+}
+
+function getHealthSignal(messages: MessageRecord[]): HealthSignal {
+  const report = buildHealthReport(
+    messages.map((message) => ({
+      id: message.id,
+      text: message.text,
+      contentUrl: message.contentUrl,
+      type: message.type,
+      timestamp: Number(message.timestamp),
+      displayName: message.displayName,
+      userId: message.userId,
+    })),
+  );
+
+  if (report.statusTone === "red") {
+    return "Critical";
+  }
+
+  if (report.statusTone === "orange") {
+    return "Watch";
+  }
+
+  return "Normal";
+}
+
+function withinDateRange(timestamp: number, range: GroupFilters["dateRange"]) {
+  if (range === "all") {
+    return true;
+  }
+
+  const now = Date.now();
+  const diff = now - timestamp;
+
+  if (range === "24h") {
+    return diff <= 1000 * 60 * 60 * 24;
+  }
+
+  if (range === "7d") {
+    return diff <= 1000 * 60 * 60 * 24 * 7;
+  }
+
+  return diff <= 1000 * 60 * 60 * 24 * 30;
+}
+
+export function buildGroupSummaries(messages: MessageRecord[]): GroupSummary[] {
+  const groups = new Map<string, MessageRecord[]>();
+
+  for (const message of messages) {
+    if (!message.groupId) {
+      continue;
+    }
+
+    const current = groups.get(message.groupId) ?? [];
+    current.push(message);
+    groups.set(message.groupId, current);
+  }
+
+  return Array.from(groups.entries())
+    .map(([groupId, groupMessages]) => {
+      const sorted = [...groupMessages].sort(
+        (left, right) => Number(right.timestamp) - Number(left.timestamp),
+      );
+      const latest = sorted[0];
+      const members = new Map<string, { userId: string; displayName: string; avatarUrl: string | null }>();
+
+      for (const message of sorted) {
+        if (!message.userId) {
+          continue;
+        }
+
+        if (!members.has(message.userId)) {
+          members.set(message.userId, {
+            userId: message.userId,
+            displayName: getDisplayName(message),
+            avatarUrl: getAvatarUrl(message),
+          });
+        }
+      }
+
+      return {
+        groupId,
+        groupName: latest ? getGroupName(latest) : `Group ${truncate(groupId, 6, 4)}`,
+        totalMessages: sorted.length,
+        memberCount: members.size,
+        lastMessageTime: latest ? Number(latest.timestamp) : null,
+        lastSync: latest ? formatDateTime(Number(latest.timestamp)) : "No sync yet",
+        lastMessagePreview: latest ? getMessagePreview(latest) : "No message captured",
+        lastMessageType: latest ? classifyMessageType(latest) : "other",
+        healthSignal: getHealthSignal(sorted),
+        status: getGroupStatus(sorted),
+        members: Array.from(members.values()),
+      };
+    })
+    .sort((left, right) => (right.lastMessageTime ?? 0) - (left.lastMessageTime ?? 0));
+}
+
+export function filterGroupSummaries(groups: GroupSummary[], filters: GroupFilters) {
+  return groups.filter((group) => {
+    const matchesSearch =
+      filters.search.length === 0 ||
+      group.groupName.toLowerCase().includes(filters.search.toLowerCase()) ||
+      group.groupId.toLowerCase().includes(filters.search.toLowerCase());
+
+    const matchesStatus = filters.status === "all" || group.status === filters.status;
+    const matchesDate = group.lastMessageTime
+      ? withinDateRange(group.lastMessageTime, filters.dateRange)
+      : filters.dateRange === "all";
+
+    const matchesType =
+      filters.messageType === "all" || group.lastMessageType === filters.messageType;
+
+    return matchesSearch && matchesStatus && matchesDate && matchesType;
+  });
+}
+
+export function buildGroupConversation(messages: MessageRecord[], groupId: string): GroupConversation | null {
+  const conversationMessages = messages
+    .filter((message) => message.groupId === groupId)
+    .sort((left, right) => Number(right.timestamp) - Number(left.timestamp));
+
+  if (conversationMessages.length === 0) {
+    return null;
+  }
+
+  const [summary] = buildGroupSummaries(conversationMessages);
+
+  return {
+    summary,
+    messages: conversationMessages,
+  };
+}
+
+export function useAutoTrackMessages() {
+  const [messages, setMessages] = useState<MessageRecord[]>([]);
+  const [status, setStatus] = useState("Waiting for LINE group activity");
+  const [error, setError] = useState<string | null>(null);
+  const [setupMessage, setSetupMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadMessages() {
+      try {
+        const response = await fetch("/api/messages", { cache: "no-store" });
+
+        if (!response.ok) {
+          throw new Error("Unable to load messages");
+        }
+
+        const data = (await response.json()) as {
+          messages: MessageRecord[];
+          configured?: boolean;
+          setupMessage?: string;
+        };
+
+        if (!isMounted) {
+          return;
+        }
+
+        setMessages(data.messages);
+        setError(null);
+        setSetupMessage(data.configured === false ? data.setupMessage ?? null : null);
+        setStatus(
+          data.messages.length > 0
+            ? `Last sync ${formatDateTime(Number(data.messages[0].timestamp))}`
+            : data.configured === false
+              ? "Database not configured"
+              : "No messages captured yet",
+        );
+      } catch (loadError) {
+        console.error(loadError);
+        if (isMounted) {
+          setError("Unable to load LINE group activity right now.");
+        }
+      }
+    }
+
+    void loadMessages();
+    const interval = window.setInterval(() => void loadMessages(), 3000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  return {
+    messages,
+    status,
+    error,
+    setupMessage,
+  };
+}
+
+export function LogoLockup() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
+        <Image src={autoHealthLogo} alt="AutoHealth" width={28} height={28} className="h-7 w-7 object-contain" />
+      </div>
+      <div>
+        <p className="text-sm font-semibold tracking-[-0.02em] text-slate-950">AutoTrack</p>
+        <p className="text-xs text-slate-500">AutoHealth Platform</p>
+      </div>
+    </div>
+  );
+}
+
+export function ConsoleShell({
+  title,
+  subtitle,
+  children,
+  topBar,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+  topBar?: ReactNode;
+}) {
+  return (
+    <main className="min-h-screen bg-[#FAFBFC] text-slate-900">
+      <div className="grid min-h-screen lg:grid-cols-[248px_minmax(0,1fr)]">
+        <aside className="border-r border-slate-200 bg-white">
+          <div className="flex h-full flex-col px-5 py-6">
+            <LogoLockup />
+
+            <nav className="mt-8 space-y-1">
+              <Link
+                href="/"
+                className="flex items-center justify-between rounded-xl bg-slate-950 px-3 py-2.5 text-sm font-medium text-white"
+              >
+                <span>Group Chats</span>
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">Live</span>
+              </Link>
+              <Link
+                href="/mini-app"
+                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+              >
+                Mini App Report
+              </Link>
+              <Link
+                href="/liff"
+                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+              >
+                LIFF Profile
+              </Link>
+            </nav>
+
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Console Story
+              </p>
+              <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                <li>1. AutoTrack joins LINE groups</li>
+                <li>2. Messages are captured into Supabase</li>
+                <li>3. Staff can review each group thread</li>
+                <li>4. Data is ready for AutoReport and AutoBrain</li>
+              </ol>
+            </div>
+          </div>
+        </aside>
+
+        <section className="min-w-0">
+          <header className="border-b border-slate-200 bg-white px-6 py-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">{title}</h1>
+                <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+              </div>
+              {topBar ? <div className="flex flex-wrap items-center gap-3">{topBar}</div> : null}
+            </div>
+          </header>
+
+          <div className="px-6 py-6">{children}</div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+export function Avatar({
+  avatarUrl,
+  displayName,
+  size = 40,
+}: {
+  avatarUrl: string | null;
+  displayName: string | null;
+  size?: number;
+}) {
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-sm font-semibold text-slate-600"
+      style={{ width: size, height: size }}
+    >
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={displayName ?? "LINE user"}
+          className="h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      ) : (
+        <span>{getInitial(displayName)}</span>
+      )}
+    </div>
+  );
+}
+
+export function StatusBadge({ status }: { status: GroupStatus }) {
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${statusToneMap[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+export function HealthSignalBadge({ signal }: { signal: HealthSignal }) {
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${healthSignalToneMap[signal]}`}
+    >
+      {signal}
+    </span>
+  );
+}
+
+export function TypeBadge({ type }: { type: string }) {
+  const tone = typeToneMap[type] ?? typeToneMap.other;
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>{type}</span>;
+}
+
+export function formatManagePreview(message: MessageRecord) {
+  return getMessagePreview(message);
+}
+
+export function resolveMessageIdentity(message: MessageRecord) {
+  return {
+    displayName: getDisplayName(message),
+    userId: message.userId,
+    avatarUrl: getAvatarUrl(message),
+  };
+}
+
+export function formatNumber(index: number) {
+  return String(index).padStart(2, "0");
+}
+
+export function getMessageType(message: MessageRecord) {
+  return classifyMessageType(message);
+}
+
+export function getMessageTimestamp(message: MessageRecord) {
+  return Number(message.timestamp);
+}
+
+export function getDirectionLabel(message: MessageRecord) {
+  return getMessageDirection(message) === "outbound" ? "Outbound" : "Inbound";
+}
+
+export function EmptyPanel({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-12 text-center">
+      <p className="text-sm font-medium text-slate-900">{title}</p>
+      <p className="mt-2 text-sm text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+export {
+  formatClock,
+  formatDate,
+  formatDateTime,
+  truncate,
+  getMessagePreview,
+  getMessageDirection,
+};
