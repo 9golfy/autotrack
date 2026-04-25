@@ -54,6 +54,8 @@ type ParsedVitals = {
   systolic: number;
   diastolic: number;
   heartRate: number;
+  legacyRespiratoryRate?: number;
+  respiratoryRate: number;
   temperature: number;
   spo2: number;
 };
@@ -68,6 +70,7 @@ export type TimedVitalsSample = {
   systolic: number | null;
   diastolic: number | null;
   heartRate: number | null;
+  respiratoryRate: number | null;
   temperature: number | null;
   spo2: number | null;
 };
@@ -101,6 +104,7 @@ const DEFAULT_VITALS: ParsedVitals = {
   systolic: 122,
   diastolic: 78,
   heartRate: 74,
+  respiratoryRate: 20,
   temperature: 36.8,
   spo2: 98,
 };
@@ -259,6 +263,18 @@ function getOverallSeverity(metrics: VitalMetric[]): Severity {
   return "normal";
 }
 
+function parseRespiratoryRate(text: string | null | undefined) {
+  if (!text) {
+    return undefined;
+  }
+
+  const match =
+    text.match(/(?:respiratory rate|rr|อัตราการหายใจ|หายใจ)[^\d]{0,12}(\d{1,2})/i) ??
+    text.match(/(\d{1,2})\s*(?:ครั้ง\/นาที|\/min)/i);
+
+  return match ? Number(match[1]) : undefined;
+}
+
 function parseHealthVitals(text: string | null | undefined): Partial<ParsedVitals> {
   if (!text) {
     return {};
@@ -279,18 +295,68 @@ function parseHealthVitals(text: string | null | undefined): Partial<ParsedVital
     systolic: pressureMatch ? Number(pressureMatch[1]) : undefined,
     diastolic: pressureMatch ? Number(pressureMatch[2]) : undefined,
     heartRate: heartRateMatch ? Number(heartRateMatch[1]) : undefined,
+    legacyRespiratoryRate:
+      text.match(/(?:respiratory rate|rr|อัตราการหายใจ|หายใจ)[^\d]{0,12}(\d{1,2})/i) ||
+      text.match(/(\d{1,2})\s*(?:ครั้ง\/นาที|\/min)/i)
+        ? Number(
+            (
+              text.match(/(?:respiratory rate|rr|อัตราการหายใจ|หายใจ)[^\d]{0,12}(\d{1,2})/i) ??
+              text.match(/(\d{1,2})\s*(?:ครั้ง\/นาที|\/min)/i)
+            )?.[1],
+          )
+        : undefined,
+    respiratoryRate:
+      text.match(/(?:อัตราการหายใจ|หายใจ)[^\d]{0,12}(\d{1,2})/i) ||
+      text.match(/(\d{1,2})\s*(?:ครั้ง\/นาที|\/min)/i)
+        ? Number(
+            (
+              text.match(/(?:อัตราการหายใจ|หายใจ)[^\d]{0,12}(\d{1,2})/i) ??
+              text.match(/(\d{1,2})\s*(?:ครั้ง\/นาที|\/min)/i)
+            )?.[1],
+          )
+        : undefined,
+    temperature: temperatureMatch ? Number(temperatureMatch[1]) : undefined,
+    spo2: spo2Match ? Number(spo2Match[1]) : undefined,
+  };
+}
+
+function parseThaiCareReportVitals(text: string | null | undefined): Partial<ParsedVitals> {
+  if (!text) {
+    return {};
+  }
+
+  const pressureMatch = text.match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+  const heartRateMatch =
+    text.match(/(?:อัตราการเต้นของหัวใจ|ชีพจร|หัวใจ)[^\d]{0,12}(\d{2,3})/i) ??
+    text.match(/(\d{2,3})\s*(?:bpm|ครั้ง\/นาที)/i);
+  const temperatureMatch =
+    text.match(/(?:อุณหภูมิร่างกาย|อุณหภูมิ|ไข้)[^\d]{0,12}(\d{2}(?:\.\d)?)/i) ??
+    text.match(/(\d{2}(?:\.\d)?)\s*(?:°c|องศา|เซลเซียส)/i);
+  const spo2Match =
+    text.match(/(?:ออกซิเจนในเลือด|ค่าออกซิเจน|ออกซิเจน|spo2|spo₂)[^\d]{0,12}(\d{2,3})\s*%?/i) ??
+    text.match(/(\d{2,3})\s*%/i);
+
+  return {
+    systolic: pressureMatch ? Number(pressureMatch[1]) : undefined,
+    diastolic: pressureMatch ? Number(pressureMatch[2]) : undefined,
+    heartRate: heartRateMatch ? Number(heartRateMatch[1]) : undefined,
+    respiratoryRate: parseRespiratoryRate(text),
     temperature: temperatureMatch ? Number(temperatureMatch[1]) : undefined,
     spo2: spo2Match ? Number(spo2Match[1]) : undefined,
   };
 }
 
 function parseVitalsNullable(text: string | null | undefined) {
-  const parsed = parseHealthVitals(text);
+  const parsed = {
+    ...parseHealthVitals(text),
+    ...parseThaiCareReportVitals(text),
+  };
 
   return {
     systolic: parsed.systolic ?? null,
     diastolic: parsed.diastolic ?? null,
     heartRate: parsed.heartRate ?? null,
+    respiratoryRate: parsed.respiratoryRate ?? null,
     temperature: parsed.temperature ?? null,
     spo2: parsed.spo2 ?? null,
   };
@@ -323,14 +389,16 @@ function extractReporterName(text: string | null | undefined) {
 }
 
 function splitTimeBlocks(text: string) {
-  const matches = Array.from(text.matchAll(/(\d{1,2}):(\d{2})/g));
+  const matches = Array.from(text.matchAll(/(?:^|[^\d])(\d{1,2})\s*[:.]\s*(\d{2})(?:\s*น\.?)?/g));
 
   if (matches.length === 0) {
     return [];
   }
 
   return matches.map((match, index) => {
-    const start = match.index ?? 0;
+    const matchStart = match.index ?? 0;
+    const digitOffset = match[0].search(/\d/);
+    const start = matchStart + (digitOffset >= 0 ? digitOffset : 0);
     const end = index < matches.length - 1 ? matches[index + 1]?.index ?? text.length : text.length;
 
     return {
@@ -355,6 +423,7 @@ export function extractTimedVitalsSamples(messages: HealthMessageInput[]): Timed
         parsed.systolic !== null ||
         parsed.diastolic !== null ||
         parsed.heartRate !== null ||
+        parsed.respiratoryRate !== null ||
         parsed.temperature !== null ||
         parsed.spo2 !== null;
 
@@ -382,6 +451,7 @@ export function extractTimedVitalsSamples(messages: HealthMessageInput[]): Timed
         parsed.systolic !== null ||
         parsed.diastolic !== null ||
         parsed.heartRate !== null ||
+        parsed.respiratoryRate !== null ||
         parsed.temperature !== null ||
         parsed.spo2 !== null;
 
@@ -419,6 +489,7 @@ function mergeVitals(baseVitals: ParsedVitals, nextVitals: Partial<ParsedVitals>
     systolic: nextVitals.systolic ?? baseVitals.systolic,
     diastolic: nextVitals.diastolic ?? baseVitals.diastolic,
     heartRate: nextVitals.heartRate ?? baseVitals.heartRate,
+    respiratoryRate: nextVitals.respiratoryRate ?? baseVitals.respiratoryRate,
     temperature: nextVitals.temperature ?? baseVitals.temperature,
     spo2: nextVitals.spo2 ?? baseVitals.spo2,
   };
@@ -458,6 +529,7 @@ export function buildHealthReport(messages: HealthMessageInput[]): HealthReport 
       systolic: timedSamples[0].systolic ?? undefined,
       diastolic: timedSamples[0].diastolic ?? undefined,
       heartRate: timedSamples[0].heartRate ?? undefined,
+      respiratoryRate: timedSamples[0].respiratoryRate ?? undefined,
       temperature: timedSamples[0].temperature ?? undefined,
       spo2: timedSamples[0].spo2 ?? undefined,
     });
@@ -468,6 +540,7 @@ export function buildHealthReport(messages: HealthMessageInput[]): HealthReport 
         parsed.systolic ||
         parsed.diastolic ||
         parsed.heartRate ||
+        parsed.respiratoryRate ||
         parsed.temperature ||
         parsed.spo2
       ) {

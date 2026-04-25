@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { buildHealthReport } from "@/lib/health-report";
+import { buildHealthReport, extractTimedVitalsSamples, type TimedVitalsSample } from "@/lib/health-report";
 
 export const runtime = "nodejs";
 
@@ -324,7 +324,85 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
   }
 }
 
+function formatSampleBloodPressure(sample: TimedVitalsSample) {
+  return sample.systolic !== null && sample.diastolic !== null
+    ? `${sample.systolic}/${sample.diastolic} mmHg`
+    : "ไม่มีข้อมูล";
+}
+
+function formatSampleValue(value: number | null, unit: string) {
+  return value !== null ? `${value} ${unit}` : "ไม่มีข้อมูล";
+}
+
+function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]) {
+  const timeOrder = new Map([
+    ["10:00", 1],
+    ["18:00", 2],
+    ["22:00", 3],
+    ["06:00", 4],
+  ]);
+  const orderedSamples = [...samples].sort((left, right) => {
+    const leftOrder = timeOrder.get(left.label) ?? left.hour * 60 + left.minute;
+    const rightOrder = timeOrder.get(right.label) ?? right.hour * 60 + right.minute;
+
+    return leftOrder - rightOrder;
+  });
+  const blocks = orderedSamples.slice(0, 2).map((sample) => ({
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    margin: "sm",
+    paddingAll: "12px",
+    cornerRadius: "16px",
+    backgroundColor: "#F8FBFF",
+    contents: [
+      { type: "text", text: `${sample.label} น.`, size: "sm", weight: "bold", color: "#0D47A1" },
+      {
+        type: "text",
+        text: `BP ${formatSampleBloodPressure(sample)} · HR ${formatSampleValue(sample.heartRate, "bpm")}`,
+        size: "xs",
+        color: "#111827",
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: `RR ${formatSampleValue(sample.respiratoryRate, "ครั้ง/นาที")} · Temp ${
+          sample.temperature !== null ? `${sample.temperature.toFixed(1)} °C` : "ไม่มีข้อมูล"
+        } · SpO2 ${formatSampleValue(sample.spo2, "%")}`,
+        size: "xs",
+        color: "#475569",
+        wrap: true,
+      },
+    ],
+  }));
+
+  if (blocks.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      type: "text",
+      text: `ข้อมูลสัญญาณชีพ ${blocks.length} เวลา`,
+      size: "xs",
+      weight: "bold",
+      color: "#0D47A1",
+      margin: "sm",
+    },
+    ...blocks,
+  ];
+}
+
 function buildHealthFlexMessage(event: LineWebhookEvent, origin: string): LineFlexMessage {
+  const timedSamples = extractTimedVitalsSamples([
+    {
+      id: event.message?.id ?? event.webhookEventId ?? randomUUID(),
+      text: event.message?.text ?? null,
+      type: event.message?.type ?? "text",
+      timestamp: event.timestamp ?? Date.now(),
+      userId: event.source?.userId ?? null,
+    },
+  ]);
   const report = buildHealthReport([
     {
       id: event.message?.id ?? event.webhookEventId ?? randomUUID(),
@@ -341,6 +419,23 @@ function buildHealthFlexMessage(event: LineWebhookEvent, origin: string): LineFl
     orange: { backgroundColor: "#FFF5DF", textColor: "#FFB300" },
     red: { backgroundColor: "#FDECEC", textColor: "#E53935" },
   }[report.statusTone];
+  const timedVitalsBlocks = buildTimedVitalsFlexBlocks(timedSamples);
+  if (timedSamples.length > 0) {
+    console.info("Extracted timed vitals for LINE health card", {
+      messageId: event.message?.id,
+      samples: timedSamples.map((sample) => ({
+        time: sample.label,
+        bloodPressure:
+          sample.systolic !== null && sample.diastolic !== null
+            ? `${sample.systolic}/${sample.diastolic}`
+            : null,
+        heartRate: sample.heartRate,
+        respiratoryRate: sample.respiratoryRate,
+        temperature: sample.temperature,
+        spo2: sample.spo2,
+      })),
+    });
+  }
 
   const flexMessage: LineFlexMessage = {
     type: "flex",
@@ -391,6 +486,7 @@ function buildHealthFlexMessage(event: LineWebhookEvent, origin: string): LineFl
             size: "sm",
             color: "#475569",
           },
+          ...timedVitalsBlocks,
           {
             type: "box",
             layout: "vertical",

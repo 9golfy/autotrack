@@ -10,11 +10,24 @@ type MiniAppReportProps = {
 };
 
 type ShiftKey = "day" | "night";
+type TimePointKey = "06:00" | "10:00" | "18:00" | "22:00";
 type MetricTone = "green" | "orange" | "red";
 
 type ShiftSummary = {
   key: ShiftKey;
   label: string;
+  systolic: number | null;
+  diastolic: number | null;
+  heartRate: number | null;
+  temperature: number | null;
+  spo2: number | null;
+  isFallback: boolean;
+};
+
+type TimePointSummary = {
+  key: TimePointKey;
+  label: string;
+  shiftLabel: string;
   systolic: number | null;
   diastolic: number | null;
   heartRate: number | null;
@@ -60,6 +73,20 @@ const SHIFT_META: Record<ShiftKey, { label: string; fallback: Omit<ShiftSummary,
   },
 };
 
+const TIME_POINT_META: Record<TimePointKey, { label: string; shiftLabel: string; hour: number; minute: number }> = {
+  "06:00": { label: "06:00 น.", shiftLabel: "เวรกลางคืน", hour: 6, minute: 0 },
+  "10:00": { label: "10:00 น.", shiftLabel: "เวรกลางวัน", hour: 10, minute: 0 },
+  "18:00": { label: "18:00 น.", shiftLabel: "เวรกลางวัน", hour: 18, minute: 0 },
+  "22:00": { label: "22:00 น.", shiftLabel: "เวรกลางคืน", hour: 22, minute: 0 },
+};
+
+const TIME_POINT_FALLBACK: Record<TimePointKey, Omit<TimePointSummary, "key" | "label" | "shiftLabel" | "isFallback">> = {
+  "06:00": { systolic: 119, diastolic: 85, heartRate: 88, temperature: 36.9, spo2: 99 },
+  "10:00": { systolic: 128, diastolic: 86, heartRate: 74, temperature: 36.3, spo2: 98 },
+  "18:00": { systolic: 106, diastolic: 72, heartRate: 74, temperature: 36.8, spo2: 97 },
+  "22:00": { systolic: 143, diastolic: 88, heartRate: 74, temperature: 36.3, spo2: 96 },
+};
+
 function formatClock(timestamp: number) {
   return new Intl.DateTimeFormat("th-TH", {
     hour: "2-digit",
@@ -72,6 +99,12 @@ function getDayKey(timestamp: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
     date.getDate(),
   ).padStart(2, "0")}`;
+}
+
+function offsetDayKey(dateKey: string, dayOffset: number) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + dayOffset);
+  return getDayKey(date.getTime());
 }
 
 function shortenUserId(userId: string | null | undefined) {
@@ -192,6 +225,114 @@ function createShiftSummaries(messages: MessageRecord[], dateKey: string) {
   };
 }
 
+function getTimePointKey(hour: number, minute: number): TimePointKey | null {
+  const minutes = hour * 60 + minute;
+  const nearest = (Object.keys(TIME_POINT_META) as TimePointKey[])
+    .map((key) => {
+      const meta = TIME_POINT_META[key];
+      return {
+        key,
+        distance: Math.abs(minutes - (meta.hour * 60 + meta.minute)),
+      };
+    })
+    .sort((left, right) => left.distance - right.distance)[0];
+
+  return nearest && nearest.distance <= 45 ? nearest.key : null;
+}
+
+function createTimePointSummaries(messages: MessageRecord[], dateKey: string) {
+  const previousDateKey = offsetDayKey(dateKey, -1);
+  const eligibleDateKeys = new Set([dateKey, previousDateKey]);
+  const dayMessages = messages.filter((message) => eligibleDateKeys.has(getDayKey(Number(message.timestamp))));
+  const timedSamples = extractTimedVitalsSamples(
+    dayMessages.map((message) => ({
+      id: message.id,
+      text: message.text,
+      contentUrl: message.contentUrl,
+      type: message.type,
+      timestamp: Number(message.timestamp),
+      displayName: message.displayName,
+      userId: message.userId,
+      pictureUrl: message.pictureUrl,
+      groupId: message.groupId,
+      groupName: message.rawPayload?.lineIdentity?.groupName ?? null,
+    })),
+  );
+
+  const sampleMap = new Map<TimePointKey, (typeof timedSamples)[number]>();
+
+  for (const sample of timedSamples) {
+    const key = getTimePointKey(sample.hour, sample.minute);
+    if (!key) {
+      continue;
+    }
+
+    const sourceDateKey = getDayKey(sample.sourceTimestamp);
+    const belongsToSelectedReportDate =
+      sourceDateKey === dateKey || (key === "22:00" && sourceDateKey === previousDateKey);
+
+    if (!belongsToSelectedReportDate) {
+      continue;
+    }
+
+    const current = sampleMap.get(key);
+    if (
+      !current ||
+      sample.sourceTimestamp > current.sourceTimestamp ||
+      (sample.sourceTimestamp === current.sourceTimestamp && sample.hour * 60 + sample.minute > current.hour * 60 + current.minute)
+    ) {
+      sampleMap.set(key, sample);
+    }
+  }
+
+  const hasAnyRealSample = sampleMap.size > 0;
+  const summaries = (Object.keys(TIME_POINT_META) as TimePointKey[]).map((key) => {
+    const meta = TIME_POINT_META[key];
+    const sample = sampleMap.get(key);
+
+    if (sample) {
+      return {
+        key,
+        label: meta.label,
+        shiftLabel: meta.shiftLabel,
+        systolic: sample.systolic,
+        diastolic: sample.diastolic,
+        heartRate: sample.heartRate,
+        temperature: sample.temperature,
+        spo2: sample.spo2,
+        isFallback: false,
+      } satisfies TimePointSummary;
+    }
+
+    if (hasAnyRealSample) {
+      return {
+        key,
+        label: meta.label,
+        shiftLabel: meta.shiftLabel,
+        systolic: null,
+        diastolic: null,
+        heartRate: null,
+        temperature: null,
+        spo2: null,
+        isFallback: false,
+      } satisfies TimePointSummary;
+    }
+
+    return {
+      key,
+      label: meta.label,
+      shiftLabel: meta.shiftLabel,
+      ...TIME_POINT_FALLBACK[key],
+      isFallback: true,
+    } satisfies TimePointSummary;
+  });
+
+  return {
+    hasRealData: summaries.some((summary) => !summary.isFallback),
+    summaries,
+  };
+}
+
 function toneClasses(tone: MetricTone) {
   if (tone === "red") {
     return "bg-rose-50 text-rose-700 ring-rose-100";
@@ -225,12 +366,15 @@ function normalizeValue(value: number | null, min: number, max: number) {
   return (clamped - min) / (max - min);
 }
 
-function buildGraphSeries(shiftSummaries: ShiftSummary[], metric: "systolic" | "heartRate" | "temperature" | "spo2") {
+function buildGraphSeries(
+  summaries: TimePointSummary[],
+  metric: "systolic" | "heartRate" | "temperature" | "spo2",
+) {
   const width = 680;
   const height = 260;
   const xStart = 110;
   const xEnd = width - 110;
-  const step = shiftSummaries.length > 1 ? (xEnd - xStart) / (shiftSummaries.length - 1) : 0;
+  const step = summaries.length > 1 ? (xEnd - xStart) / (summaries.length - 1) : 0;
 
   const [min, max] =
     metric === "systolic"
@@ -243,7 +387,7 @@ function buildGraphSeries(shiftSummaries: ShiftSummary[], metric: "systolic" | "
 
   const chartHeight = height - 80;
 
-  const points = shiftSummaries.map((item, index) => {
+  const points = summaries.map((item, index) => {
     const value = item[metric];
     const normalized = normalizeValue(value, min, max);
     return {
@@ -257,12 +401,15 @@ function buildGraphSeries(shiftSummaries: ShiftSummary[], metric: "systolic" | "
 
   let path = "";
 
-  points.forEach((point, index) => {
+  let isDrawing = false;
+  points.forEach((point) => {
     if (point.y === null) {
+      isDrawing = false;
       return;
     }
 
-    path += `${index === 0 ? "M" : " L"} ${point.x} ${point.y}`;
+    path += `${isDrawing ? " L" : "M"} ${point.x} ${point.y}`;
+    isDrawing = true;
   });
 
   return { width, height, points, path };
@@ -479,20 +626,21 @@ function ShiftVitalsCard({
 }
 
 function HealthGraph({
-  shiftSummaries,
+  timePointSummaries,
   useFallbackDemo,
 }: {
-  shiftSummaries: ShiftSummary[];
+  timePointSummaries: TimePointSummary[];
   useFallbackDemo: boolean;
 }) {
-  const [selectedShiftKey, setSelectedShiftKey] = useState<ShiftKey>("day");
+  const [selectedTimeKey, setSelectedTimeKey] = useState<TimePointKey>("10:00");
 
-  const bloodPressureGraph = useMemo(() => buildGraphSeries(shiftSummaries, "systolic"), [shiftSummaries]);
-  const heartRateGraph = useMemo(() => buildGraphSeries(shiftSummaries, "heartRate"), [shiftSummaries]);
-  const temperatureGraph = useMemo(() => buildGraphSeries(shiftSummaries, "temperature"), [shiftSummaries]);
-  const spo2Graph = useMemo(() => buildGraphSeries(shiftSummaries, "spo2"), [shiftSummaries]);
+  const bloodPressureGraph = useMemo(() => buildGraphSeries(timePointSummaries, "systolic"), [timePointSummaries]);
+  const heartRateGraph = useMemo(() => buildGraphSeries(timePointSummaries, "heartRate"), [timePointSummaries]);
+  const temperatureGraph = useMemo(() => buildGraphSeries(timePointSummaries, "temperature"), [timePointSummaries]);
+  const spo2Graph = useMemo(() => buildGraphSeries(timePointSummaries, "spo2"), [timePointSummaries]);
 
-  const selectedShift = shiftSummaries.find((item) => item.key === selectedShiftKey) ?? shiftSummaries[0];
+  const selectedTimePoint = timePointSummaries.find((item) => item.key === selectedTimeKey) ?? timePointSummaries[0];
+  const selectedShift = selectedTimePoint;
 
   return (
     <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_30px_90px_-56px_rgba(13,71,161,0.22)]">
@@ -567,7 +715,7 @@ function HealthGraph({
             <g key={point.key}>
               <line x1={point.x} x2={point.x} y1="28" y2={bloodPressureGraph.height - 48} stroke="#F1F5F9" />
               <text x={point.x} y={bloodPressureGraph.height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
-                {SHIFT_META[point.key].label}
+                {point.label}
               </text>
             </g>
           ))}
@@ -585,7 +733,7 @@ function HealthGraph({
                 cy={point.y}
                 r="6"
                 fill="#1976D2"
-                onClick={() => setSelectedShiftKey(point.key)}
+                onClick={() => setSelectedTimeKey(point.key)}
               />
             ),
           )}
@@ -597,7 +745,7 @@ function HealthGraph({
                 cy={point.y}
                 r="6"
                 fill="#7C4DFF"
-                onClick={() => setSelectedShiftKey(point.key)}
+                onClick={() => setSelectedTimeKey(point.key)}
               />
             ),
           )}
@@ -609,7 +757,7 @@ function HealthGraph({
                 cy={point.y}
                 r="6"
                 fill="#E53935"
-                onClick={() => setSelectedShiftKey(point.key)}
+                onClick={() => setSelectedTimeKey(point.key)}
               />
             ),
           )}
@@ -621,7 +769,7 @@ function HealthGraph({
                 cy={point.y}
                 r="6"
                 fill="#00C853"
-                onClick={() => setSelectedShiftKey(point.key)}
+                onClick={() => setSelectedTimeKey(point.key)}
               />
             ),
           )}
@@ -637,7 +785,9 @@ function HealthGraph({
 
       {selectedShift ? (
         <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
-          <p className="text-sm font-semibold text-slate-950">{SHIFT_META[selectedShift.key].label}</p>
+          <p className="text-sm font-semibold text-slate-950">
+            {selectedShift.label} · {selectedShift.shiftLabel}
+          </p>
           <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
             <p>BP: {selectedShift.systolic && selectedShift.diastolic ? `${selectedShift.systolic}/${selectedShift.diastolic}` : "ไม่มีข้อมูล"}</p>
             <p>HR: {selectedShift.heartRate !== null ? `${selectedShift.heartRate} bpm` : "ไม่มีข้อมูล"}</p>
@@ -856,6 +1006,14 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
     return createShiftSummaries(filteredMessages, selectedDateKey);
   }, [filteredMessages, selectedDateKey]);
 
+  const timePointData = useMemo(() => {
+    if (!selectedDateKey) {
+      return { hasRealData: false, summaries: [] as TimePointSummary[] };
+    }
+
+    return createTimePointSummaries(filteredMessages, selectedDateKey);
+  }, [filteredMessages, selectedDateKey]);
+
   const medicationReminders = useMemo(() => {
     if (!selectedDateKey) {
       return [];
@@ -986,7 +1144,7 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
           </div>
         </section>
 
-        <HealthGraph shiftSummaries={shiftData.summaries} useFallbackDemo={!shiftData.hasRealData} />
+        <HealthGraph timePointSummaries={timePointData.summaries} useFallbackDemo={!timePointData.hasRealData} />
 
         <MedicationReminder reminders={medicationReminders} />
 
