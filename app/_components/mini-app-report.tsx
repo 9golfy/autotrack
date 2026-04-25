@@ -36,6 +36,8 @@ type TimePointSummary = {
   isFallback: boolean;
 };
 
+const TIME_POINT_ORDER: TimePointKey[] = ["22:00", "06:00", "10:00", "18:00"];
+
 type TimelineGroup = {
   key: ShiftKey;
   label: string;
@@ -74,17 +76,17 @@ const SHIFT_META: Record<ShiftKey, { label: string; fallback: Omit<ShiftSummary,
 };
 
 const TIME_POINT_META: Record<TimePointKey, { label: string; shiftLabel: string; hour: number; minute: number }> = {
-  "06:00": { label: "06:00 น.", shiftLabel: "เวรกลางคืน", hour: 6, minute: 0 },
+  "22:00": { label: "22:00 น.", shiftLabel: "เวรกลางคืน (คืนก่อนหน้า)", hour: 22, minute: 0 },
+  "06:00": { label: "06:00 น.", shiftLabel: "เวรกลางคืน (เช้าวันรายงาน)", hour: 6, minute: 0 },
   "10:00": { label: "10:00 น.", shiftLabel: "เวรกลางวัน", hour: 10, minute: 0 },
   "18:00": { label: "18:00 น.", shiftLabel: "เวรกลางวัน", hour: 18, minute: 0 },
-  "22:00": { label: "22:00 น.", shiftLabel: "เวรกลางคืน", hour: 22, minute: 0 },
 };
 
 const TIME_POINT_FALLBACK: Record<TimePointKey, Omit<TimePointSummary, "key" | "label" | "shiftLabel" | "isFallback">> = {
+  "22:00": { systolic: 143, diastolic: 88, heartRate: 74, temperature: 36.3, spo2: 96 },
   "06:00": { systolic: 119, diastolic: 85, heartRate: 88, temperature: 36.9, spo2: 99 },
   "10:00": { systolic: 128, diastolic: 86, heartRate: 74, temperature: 36.3, spo2: 98 },
   "18:00": { systolic: 106, diastolic: 72, heartRate: 74, temperature: 36.8, spo2: 97 },
-  "22:00": { systolic: 143, diastolic: 88, heartRate: 74, temperature: 36.3, spo2: 96 },
 };
 
 function formatClock(timestamp: number) {
@@ -227,7 +229,7 @@ function createShiftSummaries(messages: MessageRecord[], dateKey: string) {
 
 function getTimePointKey(hour: number, minute: number): TimePointKey | null {
   const minutes = hour * 60 + minute;
-  const nearest = (Object.keys(TIME_POINT_META) as TimePointKey[])
+  const nearest = TIME_POINT_ORDER
     .map((key) => {
       const meta = TIME_POINT_META[key];
       return {
@@ -286,7 +288,7 @@ function createTimePointSummaries(messages: MessageRecord[], dateKey: string) {
   }
 
   const hasAnyRealSample = sampleMap.size > 0;
-  const summaries = (Object.keys(TIME_POINT_META) as TimePointKey[]).map((key) => {
+  const summaries = TIME_POINT_ORDER.map((key) => {
     const meta = TIME_POINT_META[key];
     const sample = sampleMap.get(key);
 
@@ -632,7 +634,7 @@ function HealthGraph({
   timePointSummaries: TimePointSummary[];
   useFallbackDemo: boolean;
 }) {
-  const [selectedTimeKey, setSelectedTimeKey] = useState<TimePointKey>("10:00");
+  const [selectedTimeKey, setSelectedTimeKey] = useState<TimePointKey>("22:00");
 
   const bloodPressureGraph = useMemo(() => buildGraphSeries(timePointSummaries, "systolic"), [timePointSummaries]);
   const heartRateGraph = useMemo(() => buildGraphSeries(timePointSummaries, "heartRate"), [timePointSummaries]);
