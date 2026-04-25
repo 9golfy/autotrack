@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type MessageRecord = {
   id: string;
@@ -35,6 +35,14 @@ type ResolvedProfile = {
   avatarUrl: string | null;
 };
 
+type TimelineItem = {
+  id: string;
+  title: string;
+  detail: string;
+  time: string;
+  tone: "blue" | "purple" | "green";
+};
+
 function formatClock(timestamp: number) {
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
@@ -42,16 +50,15 @@ function formatClock(timestamp: number) {
   }).format(timestamp);
 }
 
-function formatDateLabel(dateKey: string) {
+function formatDateLabel(timestamp: number) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
-    year: "numeric",
-  }).format(new Date(dateKey));
+  }).format(new Date(timestamp));
 }
 
-function truncate(value: string | null | undefined, head = 16, tail = 8) {
+function truncate(value: string | null | undefined, head = 12, tail = 6) {
   if (!value) {
     return "Unavailable";
   }
@@ -95,26 +102,35 @@ function getAvatarUrl(message: MessageRecord) {
 
 function getInitial(value: string | null | undefined) {
   if (!value) {
-    return "?";
+    return "U";
   }
 
-  return value.trim().charAt(0).toUpperCase() || "?";
+  return value.trim().charAt(0).toUpperCase() || "U";
 }
 
 function UserAvatar({
   avatarUrl,
   displayName,
   size = 40,
+  tone = "blue",
 }: {
   avatarUrl: string | null;
   displayName: string | null;
   size?: number;
+  tone?: "blue" | "purple" | "green";
 }) {
-  const className =
-    "overflow-hidden rounded-full border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-600 font-semibold";
+  const toneClass =
+    tone === "purple"
+      ? "from-[#EDE7FF] via-white to-[#F5F0FF] text-[#7C4DFF]"
+      : tone === "green"
+        ? "from-[#E8F9EE] via-white to-[#F3FFF7] text-[#00C853]"
+        : "from-[#E8F1FF] via-white to-[#F1F7FF] text-[#1976D2]";
 
   return (
-    <div className={className} style={{ width: size, height: size }}>
+    <div
+      className={`flex items-center justify-center overflow-hidden rounded-full border border-white/80 bg-gradient-to-br ${toneClass} shadow-[0_10px_24px_rgba(13,71,161,0.10)]`}
+      style={{ width: size, height: size }}
+    >
       {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -125,9 +141,75 @@ function UserAvatar({
             event.currentTarget.style.display = "none";
           }}
         />
-      ) : null}
-      {!avatarUrl ? <span>{getInitial(displayName)}</span> : null}
+      ) : (
+        <span className="text-sm font-semibold">{getInitial(displayName)}</span>
+      )}
     </div>
+  );
+}
+
+function EventIcon({ tone }: { tone: TimelineItem["tone"] }) {
+  const map = {
+    blue: "bg-[#E8F1FF] text-[#1976D2]",
+    purple: "bg-[#F1EDFF] text-[#7C4DFF]",
+    green: "bg-[#E8F9EE] text-[#00C853]",
+  };
+
+  return (
+    <span
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-2xl ${map[tone]}`}
+    >
+      <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 stroke-current" strokeWidth="1.8">
+        <path d="M12 5v14M5 12h14" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
+function StatBar({
+  label,
+  value,
+  total,
+  colorClass,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  colorClass: string;
+}) {
+  const percentage = total > 0 ? Math.max(10, Math.round((value / total) * 100)) : 10;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+        <span>{label}</span>
+        <span>{value}</span>
+      </div>
+      <div className="h-2 rounded-full bg-white/60">
+        <div className={`h-2 rounded-full ${colorClass}`} style={{ width: `${percentage}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function TagPill({
+  children,
+  tone,
+}: {
+  children: React.ReactNode;
+  tone: "blue" | "purple" | "sky" | "green" | "orange" | "red";
+}) {
+  const map = {
+    blue: "bg-[#E8F1FF] text-[#1976D2]",
+    purple: "bg-[#F1EDFF] text-[#7C4DFF]",
+    sky: "bg-[#E8F8FF] text-[#00B2FF]",
+    green: "bg-[#E8F9EE] text-[#00C853]",
+    orange: "bg-[#FFF5DF] text-[#FFB300]",
+    red: "bg-[#FDECEC] text-[#E53935]",
+  };
+
+  return (
+    <span className={`rounded-full px-3 py-2 text-sm font-medium ${map[tone]}`}>{children}</span>
   );
 }
 
@@ -138,6 +220,7 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const lastMessageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -199,13 +282,11 @@ export function Dashboard() {
       }
 
       const current = nextProfiles.get(message.userId);
-      const candidate: ResolvedProfile = {
+      nextProfiles.set(message.userId, {
         userId: message.userId,
         displayName: message.displayName ?? current?.displayName ?? null,
         avatarUrl: getAvatarUrl(message) ?? current?.avatarUrl ?? null,
-      };
-
-      nextProfiles.set(message.userId, candidate);
+      });
     }
 
     return nextProfiles;
@@ -225,20 +306,95 @@ export function Dashboard() {
       ?.lineIdentity?.groupName;
   }, [messages]);
 
-  const chatPreviewMessages = useMemo(() => {
+  const chatMessages = useMemo(() => {
     return [...messages]
       .sort((left, right) => Number(left.timestamp) - Number(right.timestamp))
-      .slice(-8);
+      .slice(-12);
   }, [messages]);
 
-  const groupedMessages = useMemo(() => {
-    return messages.reduce<Record<string, MessageRecord[]>>((accumulator, message) => {
-      const dateKey = new Date(Number(message.timestamp)).toISOString().split("T")[0];
-      accumulator[dateKey] ??= [];
-      accumulator[dateKey].push(message);
-      return accumulator;
-    }, {});
+  const todayMessages = useMemo(() => {
+    const todayKey = new Date().toISOString().split("T")[0];
+    return messages.filter(
+      (message) => new Date(Number(message.timestamp)).toISOString().split("T")[0] === todayKey,
+    );
   }, [messages]);
+
+  const summary = useMemo(() => {
+    const total = todayMessages.length;
+    const inbound = todayMessages.filter((message) => getDirection(message) === "inbound").length;
+    const outbound = total - inbound;
+
+    return {
+      total,
+      inbound,
+      outbound,
+      lastSync:
+        messages.length > 0 ? formatClock(Number(messages[0].timestamp)) : "No sync yet",
+    };
+  }, [messages, todayMessages]);
+
+  const activityTimeline = useMemo<TimelineItem[]>(() => {
+    return [...messages].slice(0, 6).map((message) => {
+      if (message.source === "liff") {
+        return {
+          id: message.id,
+          title: "LIFF login captured",
+          detail: message.displayName ?? truncate(message.userId),
+          time: formatClock(Number(message.timestamp)),
+          tone: "green",
+        };
+      }
+
+      if (message.source === "webhook") {
+        return {
+          id: message.id,
+          title: "Webhook received",
+          detail: getMessageLabel(message),
+          time: formatClock(Number(message.timestamp)),
+          tone: "blue",
+        };
+      }
+
+      return {
+        id: message.id,
+        title: "Message stored",
+        detail: getMessageLabel(message),
+        time: formatClock(Number(message.timestamp)),
+        tone: "purple",
+      };
+    });
+  }, [messages]);
+
+  const smartTags = useMemo(() => {
+    const keywords = ["ยา", "ความดัน", "ปวด", "ไข้", "หมอ", "นัด", "เจ็บ", "เวียนหัว"];
+    const detected = new Set<string>();
+    const types = new Set<string>();
+
+    for (const message of messages) {
+      const normalizedText = message.text ?? "";
+
+      for (const keyword of keywords) {
+        if (normalizedText.includes(keyword)) {
+          detected.add(keyword);
+        }
+      }
+
+      if (message.contentUrl && message.type === "image") {
+        types.add("image");
+      } else if (normalizedText.includes("http://") || normalizedText.includes("https://")) {
+        types.add("link");
+      } else {
+        types.add(message.type === "outbound" ? "text" : message.type);
+      }
+    }
+
+    return {
+      keywords: Array.from(detected).slice(0, 6),
+      types: Array.from(types).slice(0, 6),
+    };
+  }, [messages]);
+
+  const rawRows = useMemo(() => messages.slice(0, 8), [messages]);
 
   function resolveProfile(message: MessageRecord): ResolvedProfile {
     const matchedProfile = message.userId ? profileByUserId.get(message.userId) : null;
@@ -249,6 +405,15 @@ export function Dashboard() {
       avatarUrl: getAvatarUrl(message) ?? matchedProfile?.avatarUrl ?? null,
     };
   }
+
+  useEffect(() => {
+    if (lastMessageRef.current) {
+      lastMessageRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }
+  }, [chatMessages]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -290,59 +455,75 @@ export function Dashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#f6f8fc,_#edf3ff_45%,_#f8fbff_80%)] px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[30px] border border-slate-200/80 bg-white/95 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-3">
-              <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                MVP0 Investor Demo
-              </span>
-              <div className="space-y-2">
-                <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+    <main className="min-h-screen bg-[linear-gradient(180deg,_#F7FAFF_0%,_#F4F7FB_55%,_#FFFFFF_100%)] px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6 font-['Inter','Prompt',sans-serif]">
+        <section className="overflow-hidden rounded-[32px] bg-white/95 px-6 py-7 shadow-[0_28px_90px_rgba(13,71,161,0.10)] ring-1 ring-[#E0E0E0]">
+          <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-center">
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex rounded-full bg-[#E8F1FF] px-3 py-1 text-xs font-semibold uppercase tracking-[0.26em] text-[#0D47A1]">
+                  AutoHealth Platform
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-[#F1EDFF] px-3 py-1 text-xs font-medium text-[#7C4DFF]">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#00B2FF]" />
+                  AI-powered
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <h1 className="text-4xl font-bold tracking-[-0.04em] text-slate-950 sm:text-5xl">
                   AutoTrack
                 </h1>
-                <p className="max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
-                  After login fetch data from LINE API. Then send a message to LINE OA, receive
-                  the reply through webhook, store it in Supabase, and show everything back in the
-                  dashboard.
+                <p className="max-w-3xl text-xl font-semibold leading-8 text-[#0D47A1]">
+                  Turn LINE conversations into structured health data instantly
                 </p>
+                <p className="max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+                  AI-powered system that captures, analyzes, and transforms LINE messages into
+                  real-time health insights.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(0,178,255,0.32),_rgba(124,77,255,0.06)_70%)]">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className="h-5 w-5 stroke-[#1976D2]"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M12 4v16M4 12h16" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <div className="flex-1 overflow-hidden rounded-full bg-[#EDF3FB]">
+                  <div className="h-2 w-1/2 animate-pulse rounded-full bg-[linear-gradient(90deg,_#1976D2,_#7C4DFF,_#00B2FF)]" />
+                </div>
               </div>
             </div>
 
-            <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-slate-50/80 p-4">
+            <div className="rounded-[28px] bg-[linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(240,246,255,0.98))] p-5 shadow-[0_18px_50px_rgba(13,71,161,0.10)] ring-1 ring-[#E0E0E0]">
               <div className="flex items-start gap-4">
-                <div className="h-20 w-20 overflow-hidden rounded-3xl bg-slate-200">
-                  {liffProfile?.pictureUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={liffProfile.pictureUrl}
-                      alt={liffProfile.displayName ?? "LINE profile"}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : null}
-                </div>
-
+                <UserAvatar
+                  avatarUrl={liffProfile?.pictureUrl ?? null}
+                  displayName={liffProfile?.displayName ?? "Profile"}
+                  size={72}
+                  tone="blue"
+                />
                 <div className="min-w-0 flex-1 space-y-3">
-                  <div className="rounded-2xl bg-white px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                      Display Name
-                    </p>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Display Name</p>
+                    <p className="mt-1 truncate text-lg font-semibold text-slate-950">
                       {liffProfile?.displayName ?? "Open /liff inside LINE"}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Email</p>
-                    <p className="mt-1 truncate text-sm text-slate-700">
-                      {liffProfile?.email ?? "Email not fetched yet"}
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">User ID</p>
+                    <p className="mt-1 truncate text-sm text-slate-600">
+                      {truncate(liffProfile?.userId, 14, 6)}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">User ID</p>
-                    <p className="mt-1 truncate text-sm text-slate-700">
-                      {truncate(liffProfile?.userId)}
-                    </p>
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#00C853]" />
+                    <span>Online / synced</span>
                   </div>
                 </div>
               </div>
@@ -350,40 +531,56 @@ export function Dashboard() {
           </div>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-[30px] border border-slate-200/80 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6">
+        <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+          <div className="rounded-[30px] bg-white/95 p-5 shadow-[0_24px_80px_rgba(13,71,161,0.10)] ring-1 ring-[#E0E0E0] sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-slate-950">
-                  {activeGroupName ?? "Group Chat Name"}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Simple chat preview for the investor walkthrough.
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  Live Conversation
                 </p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
+                  {activeGroupName ?? "Patient Conversation Feed"}
+                </h2>
               </div>
               <a
                 href="/liff"
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 transition hover:border-emerald-200 hover:bg-emerald-50"
+                className="rounded-full bg-[linear-gradient(135deg,_#1976D2,_#7C4DFF)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-[0_14px_34px_rgba(25,118,210,0.22)] transition hover:-translate-y-0.5"
               >
                 Open LIFF
               </a>
             </div>
 
-            <div className="mt-5 rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#f8fbff,_#f3f6fb)] p-4">
-              <div className="space-y-3">
-                {chatPreviewMessages.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 py-10 text-center text-sm text-slate-500">
-                    Open `/liff`, login inside LINE, then send and reply to see the conversation.
-                  </div>
-                ) : (
-                  chatPreviewMessages.map((message) => {
-                    const direction = getDirection(message);
-                    const profile = resolveProfile(message);
+            <div className="mt-5 max-h-[64vh] space-y-3 overflow-y-auto rounded-[28px] bg-[linear-gradient(180deg,_#F8FBFF,_#F2F7FD)] p-4">
+              {chatMessages.length === 0 ? (
+                <div className="rounded-[24px] border border-dashed border-[#E0E0E0] bg-white/90 px-5 py-14 text-center text-sm text-slate-500">
+                  No LINE messages yet. Connect LIFF, send a message, and let AutoHealth start
+                  structuring the conversation.
+                </div>
+              ) : (
+                chatMessages.map((message, index) => {
+                  const direction = getDirection(message);
+                  const profile = resolveProfile(message);
+                  const isLastMessage = index === chatMessages.length - 1;
+                  const showDateLabel =
+                    index === 0 ||
+                    formatDateLabel(Number(chatMessages[index - 1].timestamp)) !==
+                      formatDateLabel(Number(message.timestamp));
 
-                    return (
+                  return (
+                    <div key={message.id} className="space-y-3">
+                      {showDateLabel ? (
+                        <div className="flex justify-center">
+                          <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 shadow-sm">
+                            {formatDateLabel(Number(message.timestamp))}
+                          </span>
+                        </div>
+                      ) : null}
+
                       <div
-                        key={message.id}
-                        className={`flex ${direction === "outbound" ? "justify-end" : "justify-start"}`}
+                        ref={isLastMessage ? lastMessageRef : null}
+                        className={`flex animate-[fadeIn_220ms_ease-out] ${
+                          direction === "outbound" ? "justify-end" : "justify-start"
+                        }`}
                       >
                         <div
                           className={`flex max-w-[92%] items-end gap-3 ${
@@ -394,12 +591,13 @@ export function Dashboard() {
                             avatarUrl={profile.avatarUrl}
                             displayName={profile.displayName}
                             size={40}
+                            tone={direction === "outbound" ? "green" : "blue"}
                           />
                           <div
-                            className={`max-w-[85%] rounded-[24px] border px-4 py-3 shadow-sm ${
+                            className={`max-w-[85%] rounded-[24px] px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 ${
                               direction === "outbound"
-                                ? "rounded-br-md border-emerald-400 bg-emerald-500 text-white"
-                                : "rounded-bl-md border-slate-200 bg-white text-slate-900"
+                                ? "rounded-br-md bg-[linear-gradient(180deg,_#E8F8FF,_#E9F4FF)] text-slate-900"
+                                : "rounded-bl-md bg-white text-slate-900"
                             }`}
                           >
                             <p className="text-sm leading-6">{getMessageLabel(message)}</p>
@@ -414,33 +612,27 @@ export function Dashboard() {
                                 <img
                                   src={message.contentUrl}
                                   alt="LINE attachment"
-                                  className="max-h-60 rounded-2xl border border-black/5 object-cover"
+                                  className="max-h-64 rounded-[20px] border border-[#E0E0E0] object-cover"
                                 />
                               </a>
                             ) : null}
-                            <div
-                              className={`mt-3 space-y-1 text-[11px] ${
-                                direction === "outbound" ? "text-emerald-50/90" : "text-slate-500"
-                              }`}
-                            >
-                              <p className="font-semibold">
-                                {profile.displayName ?? "Unknown user"}
-                              </p>
+                            <div className="mt-3 space-y-1 text-[11px] text-slate-500">
+                              <p className="font-semibold text-slate-700">{profile.displayName}</p>
                               <p>{formatClock(Number(message.timestamp))}</p>
                               <p>{truncate(profile.userId, 10, 4)}</p>
                             </div>
                           </div>
                         </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             <form className="mt-5 flex items-end gap-3" onSubmit={handleSubmit}>
-              <div className="flex-1 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-3">
-                <label className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+              <div className="flex-1 rounded-[28px] bg-[#F5F8FC] px-4 py-3 ring-1 ring-[#E0E0E0] transition focus-within:ring-2 focus-within:ring-[#00B2FF]/25">
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                   Message Input
                 </label>
                 <input
@@ -454,7 +646,7 @@ export function Dashboard() {
               <button
                 type="submit"
                 disabled={isSending || !input.trim()}
-                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-slate-950 text-xl font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,_#0D47A1,_#1976D2)] text-xl font-semibold text-white shadow-[0_16px_40px_rgba(13,71,161,0.26)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:bg-slate-300"
                 aria-label="Send message"
               >
                 &gt;
@@ -463,128 +655,181 @@ export function Dashboard() {
 
             <div className="mt-4 space-y-3">
               <p className="text-sm text-slate-500">
-                This uses the existing `/api/line/send` route to send a message to LINE OA.
+                Connect LINE, stream the conversation in real time, and prepare the data for the
+                next AI healthcare layer.
               </p>
               {error ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <div className="rounded-2xl bg-[#FDECEC] px-4 py-3 text-sm text-[#E53935] ring-1 ring-[#F7D5D5]">
                   {error}
                 </div>
               ) : null}
               {setupMessage ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div className="rounded-2xl bg-[#FFF5DF] px-4 py-3 text-sm text-[#FFB300] ring-1 ring-[#FFE2A6]">
                   {setupMessage}
                 </div>
               ) : null}
             </div>
           </div>
 
-          <div className="rounded-[30px] border border-slate-200/80 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-slate-950">Messages (Raw Data)</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Polling `/api/messages` every 3 seconds from Supabase.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Sync Status</p>
-                <p className="mt-1 text-sm font-medium text-slate-800">{status}</p>
-              </div>
-            </div>
-
-            <div className="mt-5 max-h-[72vh] space-y-6 overflow-y-auto pr-1">
-              {messages.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-                  No messages stored yet.
+          <div className="space-y-5">
+            <div className="rounded-[30px] bg-white/95 p-5 shadow-[0_24px_80px_rgba(13,71,161,0.10)] ring-1 ring-[#E0E0E0] sm:p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    Smart Insight
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
+                    Structured Activity View
+                  </h2>
                 </div>
-              ) : (
-                Object.entries(groupedMessages).map(([dateKey, dayMessages]) => (
-                  <section key={dateKey} className="space-y-3">
-                    <div className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      {formatDateLabel(dateKey)}
+                <span className="rounded-full bg-[#F1EDFF] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#7C4DFF]">
+                  AI Layer
+                </span>
+              </div>
+
+              <div className="mt-5 space-y-5">
+                <div className="rounded-[26px] bg-[linear-gradient(135deg,_#0D47A1,_#1976D2_55%,_#7C4DFF)] p-5 text-white shadow-[0_20px_45px_rgba(25,118,210,0.20)]">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-white/70">
+                        Total Messages
+                      </p>
+                      <p className="mt-2 text-3xl font-bold tracking-[-0.04em]">
+                        {summary.total}
+                      </p>
                     </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-white/70">
+                        Inbound / Outbound
+                      </p>
+                      <p className="mt-2 text-2xl font-bold tracking-[-0.04em]">
+                        {summary.inbound} / {summary.outbound}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-white/70">
+                        Last Sync
+                      </p>
+                      <p className="mt-2 text-lg font-semibold">{summary.lastSync}</p>
+                    </div>
+                  </div>
 
-                    <div className="overflow-hidden rounded-[28px] border border-slate-200">
-                      <div className="grid grid-cols-[minmax(0,1.2fr)_110px_1.1fr_140px] gap-4 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        <span>Message</span>
-                        <span>Direction</span>
-                        <span>User</span>
-                        <span>Time</span>
+                  <div className="mt-5 space-y-3">
+                    <StatBar
+                      label="Inbound"
+                      value={summary.inbound}
+                      total={Math.max(summary.total, 1)}
+                      colorClass="bg-[linear-gradient(90deg,_#00B2FF,_#FFFFFF)]"
+                    />
+                    <StatBar
+                      label="Outbound"
+                      value={summary.outbound}
+                      total={Math.max(summary.total, 1)}
+                      colorClass="bg-[linear-gradient(90deg,_#FFB300,_#FFFFFF)]"
+                    />
+                  </div>
+                  <p className="mt-4 text-xs uppercase tracking-[0.18em] text-white/70">
+                    {status}
+                  </p>
+                </div>
+
+                <div className="rounded-[26px] bg-[#F7FAFF] p-5">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Activity Timeline
+                  </h3>
+                  <div className="mt-4 space-y-4">
+                    {activityTimeline.map((item, index) => (
+                      <div key={item.id} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <EventIcon tone={item.tone} />
+                          {index < activityTimeline.length - 1 ? (
+                            <span className="mt-2 h-full w-px bg-[#E0E0E0]" />
+                          ) : null}
+                        </div>
+                        <div className="pb-2">
+                          <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                          <p className="mt-1 text-sm text-slate-500">{item.detail}</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
+                            {item.time}
+                          </p>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
 
-                      {dayMessages.map((message) => {
-                        const direction = getDirection(message);
-                        const profile = resolveProfile(message);
+                <div className="rounded-[26px] bg-[#F7FAFF] p-5">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Smart Tags
+                  </h3>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {smartTags.keywords.length === 0 ? (
+                      <span className="rounded-full bg-white px-3 py-2 text-sm text-slate-500">
+                        No healthcare keywords detected yet
+                      </span>
+                    ) : (
+                      smartTags.keywords.map((tag, index) => (
+                        <TagPill
+                          key={tag}
+                          tone={index % 3 === 0 ? "red" : index % 3 === 1 ? "orange" : "green"}
+                        >
+                          {tag}
+                        </TagPill>
+                      ))
+                    )}
+                    {smartTags.types.map((type) => (
+                      <TagPill
+                        key={type}
+                        tone={
+                          type === "image" ? "purple" : type === "link" ? "sky" : "blue"
+                        }
+                      >
+                        {type}
+                      </TagPill>
+                    ))}
+                  </div>
+                </div>
 
-                        return (
-                          <div
-                            key={message.id}
-                            className="grid grid-cols-[minmax(0,1.2fr)_110px_1.1fr_140px] gap-4 border-t border-slate-200 px-4 py-4 text-sm text-slate-700"
-                          >
-                            <div className="space-y-3">
-                              <p className="leading-6 text-slate-900">{getMessageLabel(message)}</p>
-                              {message.contentUrl ? (
-                                <a href={message.contentUrl} target="_blank" rel="noreferrer">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={message.contentUrl}
-                                    alt="Message attachment"
-                                    className="max-h-36 rounded-2xl border border-slate-200 object-cover"
-                                  />
-                                </a>
-                              ) : null}
-                            </div>
-
-                            <div className="space-y-2">
-                              <span
-                                className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                                  direction === "outbound"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-sky-100 text-sky-700"
-                                }`}
-                              >
-                                {direction}
-                              </span>
-                              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                                  {message.type}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-start gap-3">
-                              <UserAvatar
-                                avatarUrl={profile.avatarUrl}
-                                displayName={profile.displayName}
-                                size={40}
-                              />
-                              <div className="space-y-1">
-                                <p className="font-medium text-slate-900">
-                                  {profile.displayName ?? "Unknown user"}
-                                </p>
-                                <p className="truncate text-slate-500">
-                                  {truncate(profile.userId, 10, 4)}
-                                </p>
-                                {message.rawPayload?.lineIdentity?.groupName ? (
-                                  <p className="truncate text-slate-400">
-                                    {message.rawPayload.lineIdentity.groupName}
-                                  </p>
-                                ) : message.groupId ? (
-                                  <p className="truncate text-slate-400">Group {message.groupId}</p>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className="text-slate-500">
-                              {formatClock(Number(message.timestamp))}
+                <div className="rounded-[26px] bg-[#F7FAFF] p-5">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Raw Data
+                  </h3>
+                  <div className="mt-4 overflow-hidden rounded-2xl bg-white ring-1 ring-[#E0E0E0]">
+                    {rawRows.map((message) => {
+                      const profile = resolveProfile(message);
+                      return (
+                        <div
+                          key={message.id}
+                          className="grid grid-cols-[minmax(0,1.3fr)_90px_110px] gap-3 border-t border-[#F1F3F5] px-4 py-3 first:border-t-0"
+                        >
+                          <div className="flex items-center gap-3">
+                            <UserAvatar
+                              avatarUrl={profile.avatarUrl}
+                              displayName={profile.displayName}
+                              size={36}
+                              tone="blue"
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-900">
+                                {profile.displayName}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-slate-500">
+                                {truncate(profile.userId, 10, 4)}
+                              </p>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))
-              )}
+                          <div className="text-xs uppercase tracking-[0.16em] text-slate-500">
+                            {message.type}
+                          </div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-slate-400">
+                            {formatClock(Number(message.timestamp))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>

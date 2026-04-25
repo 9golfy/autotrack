@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { buildHealthReport } from "@/lib/health-report";
 
 export const runtime = "nodejs";
 
 type LineWebhookEvent = {
   type: string;
   timestamp?: number;
+  replyToken?: string;
   source?: {
     type?: string;
     userId?: string;
@@ -44,6 +46,12 @@ type ResolvedLineIdentity = {
   statusMessage: string | null;
   groupName: string | null;
   error: string | null;
+};
+
+type LineFlexMessage = {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
 };
 
 function verifySignature(body: string, signature: string | null) {
@@ -301,6 +309,200 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
   }
 }
 
+async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
+  if (!event.replyToken) {
+    return;
+  }
+
+  const accessToken = getLineMessagingAccessToken();
+
+  if (!accessToken) {
+    console.warn("Missing LINE messaging access token; skipping reply card");
+    return;
+  }
+
+  const report = buildHealthReport([
+    {
+      id: event.message?.id ?? event.webhookEventId ?? randomUUID(),
+      text: event.message?.text ?? null,
+      type: event.message?.type ?? "text",
+      timestamp: event.timestamp ?? Date.now(),
+      displayName: null,
+      userId: event.source?.userId ?? null,
+    },
+  ]);
+
+  const statusStyles = {
+    green: { backgroundColor: "#E8F9EE", textColor: "#00C853" },
+    orange: { backgroundColor: "#FFF5DF", textColor: "#FFB300" },
+    red: { backgroundColor: "#FDECEC", textColor: "#E53935" },
+  }[report.statusTone];
+
+  const flexMessage: LineFlexMessage = {
+    type: "flex",
+    altText: `บันทึกข้อมูลสำเร็จ • ความดัน ${report.vitals.bloodPressure.value} • ชีพจร ${report.vitals.heartRate.value}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            justifyContent: "space-between",
+            alignItems: "center",
+            contents: [
+              {
+                type: "text",
+                text: "บันทึกข้อมูลสำเร็จ",
+                weight: "bold",
+                size: "lg",
+                color: "#0D47A1",
+              },
+              {
+                type: "box",
+                layout: "baseline",
+                paddingAll: "6px",
+                cornerRadius: "999px",
+                backgroundColor: statusStyles.backgroundColor,
+                contents: [
+                  {
+                    type: "text",
+                    text: report.statusLabel,
+                    size: "xs",
+                    weight: "bold",
+                    color: statusStyles.textColor,
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            type: "text",
+            text: report.aiSummary,
+            wrap: true,
+            size: "sm",
+            color: "#475569",
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            margin: "md",
+            paddingAll: "14px",
+            cornerRadius: "20px",
+            backgroundColor: "#F8FBFF",
+            contents: [
+              {
+                type: "box",
+                layout: "horizontal",
+                justifyContent: "space-between",
+                contents: [
+                  {
+                    type: "text",
+                    text: "ความดัน",
+                    size: "sm",
+                    color: "#64748B",
+                  },
+                  {
+                    type: "text",
+                    text: `${report.vitals.bloodPressure.value} ${report.vitals.bloodPressure.unit}`,
+                    size: "sm",
+                    weight: "bold",
+                    color: "#111827",
+                  },
+                ],
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                justifyContent: "space-between",
+                contents: [
+                  {
+                    type: "text",
+                    text: "ชีพจร",
+                    size: "sm",
+                    color: "#64748B",
+                  },
+                  {
+                    type: "text",
+                    text: `${report.vitals.heartRate.value} ${report.vitals.heartRate.unit}`,
+                    size: "sm",
+                    weight: "bold",
+                    color: "#111827",
+                  },
+                ],
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                justifyContent: "space-between",
+                contents: [
+                  {
+                    type: "text",
+                    text: "อุณหภูมิ",
+                    size: "sm",
+                    color: "#64748B",
+                  },
+                  {
+                    type: "text",
+                    text: `${report.vitals.temperature.value} ${report.vitals.temperature.unit}`,
+                    size: "sm",
+                    weight: "bold",
+                    color: "#111827",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            height: "sm",
+            color: "#1976D2",
+            action: {
+              type: "uri",
+              label: "ดูรายงาน",
+              uri: `${origin}/mini-app`,
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      replyToken: event.replyToken,
+      messages: [flexMessage],
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Failed to send LINE reply card", {
+      replyToken: event.replyToken,
+      errorBody,
+    });
+  }
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text();
   const signature = request.headers.get("x-line-signature");
@@ -398,6 +600,10 @@ export async function POST(request: NextRequest) {
         }),
         skipDuplicates: false,
       });
+
+      for (const event of messageEvents) {
+        await replyWithHealthCard(event, request.nextUrl.origin);
+      }
     } catch (error) {
       console.error("Failed to persist LINE webhook events", error);
       return NextResponse.json({ error: "Failed to save webhook events" }, { status: 500 });
