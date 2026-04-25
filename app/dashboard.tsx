@@ -18,6 +18,12 @@ type MessageRecord = {
   type: string;
   timestamp: string;
   createdAt: string;
+  rawPayload?: {
+    lineIdentity?: {
+      groupName?: string | null;
+      error?: string | null;
+    } | null;
+  } | null;
 };
 
 function formatClock(timestamp: number) {
@@ -134,6 +140,11 @@ export function Dashboard() {
         (message.type === "liff-profile" ||
           Boolean(message.pictureUrl || message.displayName || message.email || message.userId)),
     );
+  }, [messages]);
+
+  const activeGroupName = useMemo(() => {
+    return messages.find((message) => message.rawPayload?.lineIdentity?.groupName)?.rawPayload
+      ?.lineIdentity?.groupName;
   }, [messages]);
 
   const chatPreviewMessages = useMemo(() => {
@@ -255,7 +266,9 @@ export function Dashboard() {
           <div className="rounded-[30px] border border-slate-200/80 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-slate-950">Group Chat Name</h2>
+                <h2 className="text-2xl font-semibold text-slate-950">
+                  {activeGroupName ?? "Group Chat Name"}
+                </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   Simple chat preview for the investor walkthrough.
                 </p>
@@ -312,6 +325,9 @@ export function Dashboard() {
                             }`}
                           >
                             <span>{message.displayName ?? truncate(message.userId, 8, 4)}</span>
+                            {message.rawPayload?.lineIdentity?.groupName ? (
+                              <span>{message.rawPayload.lineIdentity.groupName}</span>
+                            ) : null}
                             <span>{formatClock(Number(message.timestamp))}</span>
                           </div>
                         </div>
@@ -450,7 +466,11 @@ export function Dashboard() {
                               <p className="truncate text-slate-500">
                                 {message.email ?? truncate(message.userId)}
                               </p>
-                              {message.groupId ? (
+                              {message.rawPayload?.lineIdentity?.groupName ? (
+                                <p className="truncate text-slate-400">
+                                  {message.rawPayload.lineIdentity.groupName}
+                                </p>
+                              ) : message.groupId ? (
                                 <p className="truncate text-slate-400">Group {message.groupId}</p>
                               ) : null}
                             </div>

@@ -38,6 +38,14 @@ type UploadedLineContent = {
   error: string | null;
 };
 
+type ResolvedLineIdentity = {
+  displayName: string | null;
+  pictureUrl: string | null;
+  statusMessage: string | null;
+  groupName: string | null;
+  error: string | null;
+};
+
 function verifySignature(body: string, signature: string | null) {
   const secret =
     process.env.LINE_MESSAGING_CHANNEL_SECRET ?? process.env.LINE_CHANNEL_SECRET;
@@ -74,6 +82,115 @@ function getFileExtension(contentType: string) {
       return "webp";
     default:
       return "bin";
+  }
+}
+
+async function fetchLineApiJson<T>(path: string): Promise<T> {
+  const accessToken = getLineMessagingAccessToken();
+
+  if (!accessToken) {
+    throw new Error("Missing LINE messaging access token");
+  }
+
+  const response = await fetch(`https://api.line.me${path}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`LINE API ${path} failed: ${response.status} ${errorBody}`.trim());
+  }
+
+  return (await response.json()) as T;
+}
+
+async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLineIdentity> {
+  const userId = event.source?.userId;
+  const groupId = event.source?.groupId;
+  const roomId = event.source?.roomId;
+  const sourceType = event.source?.type;
+
+  if (!userId) {
+    return {
+      displayName: null,
+      pictureUrl: null,
+      statusMessage: null,
+      groupName: null,
+      error: "Missing userId in webhook source",
+    };
+  }
+
+  try {
+    if (sourceType === "group" && groupId) {
+      const [memberProfile, groupSummary] = await Promise.all([
+        fetchLineApiJson<{
+          displayName?: string;
+          pictureUrl?: string;
+          statusMessage?: string;
+        }>(`/v2/bot/group/${groupId}/member/${userId}`),
+        fetchLineApiJson<{
+          groupName?: string;
+        }>(`/v2/bot/group/${groupId}/summary`),
+      ]);
+
+      return {
+        displayName: memberProfile.displayName ?? null,
+        pictureUrl: memberProfile.pictureUrl ?? null,
+        statusMessage: memberProfile.statusMessage ?? null,
+        groupName: groupSummary.groupName ?? null,
+        error: null,
+      };
+    }
+
+    if (sourceType === "room" && roomId) {
+      const memberProfile = await fetchLineApiJson<{
+        displayName?: string;
+        pictureUrl?: string;
+        statusMessage?: string;
+      }>(`/v2/bot/room/${roomId}/member/${userId}`);
+
+      return {
+        displayName: memberProfile.displayName ?? null,
+        pictureUrl: memberProfile.pictureUrl ?? null,
+        statusMessage: memberProfile.statusMessage ?? null,
+        groupName: null,
+        error: null,
+      };
+    }
+
+    const profile = await fetchLineApiJson<{
+      displayName?: string;
+      pictureUrl?: string;
+      statusMessage?: string;
+    }>(`/v2/bot/profile/${userId}`);
+
+    return {
+      displayName: profile.displayName ?? null,
+      pictureUrl: profile.pictureUrl ?? null,
+      statusMessage: profile.statusMessage ?? null,
+      groupName: null,
+      error: null,
+    };
+  } catch (error) {
+    console.error("Failed to resolve LINE identity", {
+      sourceType,
+      userId,
+      groupId,
+      roomId,
+      error,
+    });
+
+    return {
+      displayName: null,
+      pictureUrl: null,
+      statusMessage: null,
+      groupName: null,
+      error: error instanceof Error ? error.message : "Failed to resolve LINE identity",
+    };
   }
 }
 
@@ -207,8 +324,20 @@ export async function POST(request: NextRequest) {
   if (messageEvents.length > 0) {
     try {
       const uploadedContentByMessageId = new Map<string, UploadedLineContent>();
+      const lineIdentityBySourceKey = new Map<string, ResolvedLineIdentity>();
 
       for (const event of messageEvents) {
+        const sourceKey = [
+          event.source?.type ?? "unknown",
+          event.source?.groupId ?? "",
+          event.source?.roomId ?? "",
+          event.source?.userId ?? "",
+        ].join(":");
+
+        if (!lineIdentityBySourceKey.has(sourceKey)) {
+          lineIdentityBySourceKey.set(sourceKey, await resolveLineIdentity(event));
+        }
+
         if (event.message?.type === "image" && event.message.id) {
           uploadedContentByMessageId.set(
             event.message.id,
@@ -222,11 +351,21 @@ export async function POST(request: NextRequest) {
           const uploadedContent = event.message?.id
             ? uploadedContentByMessageId.get(event.message.id)
             : undefined;
+          const sourceKey = [
+            event.source?.type ?? "unknown",
+            event.source?.groupId ?? "",
+            event.source?.roomId ?? "",
+            event.source?.userId ?? "",
+          ].join(":");
+          const lineIdentity = lineIdentityBySourceKey.get(sourceKey);
 
           return {
             messageId: event.message?.id ?? event.webhookEventId ?? randomUUID(),
             userId: event.source?.userId ?? null,
             groupId: event.source?.groupId ?? event.source?.roomId ?? null,
+            displayName: lineIdentity?.displayName ?? null,
+            pictureUrl: lineIdentity?.pictureUrl ?? null,
+            statusMessage: lineIdentity?.statusMessage ?? null,
             source: "webhook",
             text: event.message?.type === "text" ? event.message.text ?? null : null,
             contentUrl: uploadedContent?.contentUrl ?? null,
@@ -234,6 +373,13 @@ export async function POST(request: NextRequest) {
             type: event.message?.type ?? "unknown",
             rawPayload: {
               event,
+              lineIdentity: {
+                displayName: lineIdentity?.displayName ?? null,
+                pictureUrl: lineIdentity?.pictureUrl ?? null,
+                statusMessage: lineIdentity?.statusMessage ?? null,
+                groupName: lineIdentity?.groupName ?? null,
+                error: lineIdentity?.error ?? null,
+              },
               mediaUpload:
                 event.message?.type === "image"
                   ? {
