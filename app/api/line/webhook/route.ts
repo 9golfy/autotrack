@@ -76,6 +76,21 @@ function getLineMessagingAccessToken() {
   ).trim();
 }
 
+function getLineTargetId() {
+  return (process.env.LINE_TARGET_ID ?? "").trim();
+}
+
+function getMiniAppReportUrl(origin: string, event: LineWebhookEvent) {
+  const reportUrl = new URL("/mini-app", origin);
+  const groupId = event.source?.groupId ?? event.source?.roomId;
+
+  if (groupId) {
+    reportUrl.searchParams.set("groupId", groupId);
+  }
+
+  return reportUrl.toString();
+}
+
 function getFileExtension(contentType: string) {
   const normalizedType = contentType.split(";")[0].trim().toLowerCase();
 
@@ -309,18 +324,7 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
   }
 }
 
-async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
-  if (!event.replyToken) {
-    return;
-  }
-
-  const accessToken = getLineMessagingAccessToken();
-
-  if (!accessToken) {
-    console.warn("Missing LINE messaging access token; skipping reply card");
-    return;
-  }
-
+function buildHealthFlexMessage(event: LineWebhookEvent, origin: string): LineFlexMessage {
   const report = buildHealthReport([
     {
       id: event.message?.id ?? event.webhookEventId ?? randomUUID(),
@@ -473,13 +477,30 @@ async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
             action: {
               type: "uri",
               label: "ดูรายงาน",
-              uri: `${origin}/mini-app`,
+              uri: getMiniAppReportUrl(origin, event),
             },
           },
         ],
       },
     },
   };
+
+  return flexMessage;
+}
+
+async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
+  if (!event.replyToken) {
+    return;
+  }
+
+  const accessToken = getLineMessagingAccessToken();
+
+  if (!accessToken) {
+    console.warn("Missing LINE messaging access token; skipping reply card");
+    return;
+  }
+
+  const flexMessage = buildHealthFlexMessage(event, origin);
 
   const response = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
@@ -498,6 +519,40 @@ async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
     const errorBody = await response.text();
     console.error("Failed to send LINE reply card", {
       replyToken: event.replyToken,
+      errorBody,
+    });
+  }
+}
+
+async function pushHealthCardToLineTarget(event: LineWebhookEvent, origin: string) {
+  const accessToken = getLineMessagingAccessToken();
+  const targetId = getLineTargetId();
+
+  if (!accessToken || !targetId) {
+    console.warn("Missing LINE messaging access token or LINE_TARGET_ID; skipping OA push card");
+    return;
+  }
+
+  const flexMessage = buildHealthFlexMessage(event, origin);
+
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: targetId,
+      messages: [flexMessage],
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Failed to push LINE OA health card", {
+      targetId,
+      groupId: event.source?.groupId ?? event.source?.roomId ?? null,
       errorBody,
     });
   }
@@ -602,11 +657,14 @@ export async function POST(request: NextRequest) {
       });
 
       for (const event of messageEvents) {
-        if (event.source?.type !== "user") {
+        if (event.source?.type === "user") {
+          await replyWithHealthCard(event, request.nextUrl.origin);
           continue;
         }
 
-        await replyWithHealthCard(event, request.nextUrl.origin);
+        if (event.source?.groupId || event.source?.roomId) {
+          await pushHealthCardToLineTarget(event, request.nextUrl.origin);
+        }
       }
     } catch (error) {
       console.error("Failed to persist LINE webhook events", error);

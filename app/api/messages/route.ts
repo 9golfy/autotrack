@@ -5,6 +5,8 @@ import { getDatabaseSetupMessage, hasValidDatabaseUrl } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   if (!hasValidDatabaseUrl()) {
@@ -23,13 +25,20 @@ export async function GET() {
       take: 200,
     });
 
-    return NextResponse.json({
+    return NextResponse.json(
+      {
       messages: messages.map((message) => ({
         ...message,
         timestamp: message.timestamp.toString(),
       })),
       configured: true,
-    });
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        },
+      },
+    );
   } catch (error) {
     console.error("Failed to fetch messages", error);
     return NextResponse.json({ error: "Failed to fetch messages" }, { status: 500 });

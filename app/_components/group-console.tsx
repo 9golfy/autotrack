@@ -2,10 +2,14 @@
 
 /* eslint-disable @next/next/no-img-element */
 
+import Image from "next/image";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { buildHealthReport } from "@/lib/health-report";
+import autoHealthLineLogo from "@/logo/Auto_Health_Line_Logo.png";
+import autoHealthLogo from "@/logo/Auto_Health_Logo_Horizontal_300.png";
 
 export type MessageRecord = {
   id: string;
@@ -66,6 +70,23 @@ export type GroupConversation = {
   messages: MessageRecord[];
 };
 
+const thaiDateFormatter = new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+  day: "numeric",
+  month: "short",
+  year: "2-digit",
+});
+
+const thaiDateShortFormatter = new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+  day: "numeric",
+  month: "short",
+});
+
+const thaiClockFormatter = new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 const statusToneMap: Record<GroupStatus, string> = {
   Active: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   "Needs Review": "bg-amber-50 text-amber-700 ring-amber-100",
@@ -86,28 +107,78 @@ const typeToneMap: Record<string, string> = {
   other: "bg-slate-100 text-slate-600",
 };
 
-function formatClock(timestamp: number) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(timestamp);
+const navItems = [
+  { href: "/", label: "Dashboard", icon: "DB", activeMatch: (pathname: string) => pathname === "/" },
+  { href: "/", label: "Group Chat", icon: "GC", activeMatch: (pathname: string) => pathname.startsWith("/groups/") },
+  { href: "/", label: "Patients", icon: "PT", activeMatch: () => false },
+  { href: "/", label: "Staff", icon: "ST", activeMatch: () => false },
+  { href: "/", label: "Floor Plan", icon: "FP", activeMatch: () => false },
+  { href: "/", label: "Settings", icon: "SE", activeMatch: () => false },
+];
+
+function getStatusLabel(status: GroupStatus) {
+  if (status === "Active") {
+    return "ใช้งานอยู่";
+  }
+
+  if (status === "Needs Review") {
+    return "ต้องตรวจสอบ";
+  }
+
+  return "ไม่มีความเคลื่อนไหว";
 }
 
-function formatDate(timestamp: number) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(timestamp);
+function getHealthSignalLabel(signal: HealthSignal) {
+  if (signal === "Normal") {
+    return "ปกติ";
+  }
+
+  if (signal === "Watch") {
+    return "เฝ้าระวัง";
+  }
+
+  return "วิกฤต";
 }
 
-function formatDateTime(timestamp: number) {
+function getMessageTypeLabel(type: string) {
+  if (type === "text") {
+    return "ข้อความ";
+  }
+
+  if (type === "image") {
+    return "รูปภาพ";
+  }
+
+  if (type === "link") {
+    return "ลิงก์";
+  }
+
+  if (type === "outbound") {
+    return "ส่งออก";
+  }
+
+  return "อื่น ๆ";
+}
+
+export function formatClock(timestamp: number) {
+  return thaiClockFormatter.format(timestamp);
+}
+
+export function formatDate(timestamp: number) {
+  return thaiDateFormatter.format(timestamp);
+}
+
+export function formatDateShort(timestamp: number) {
+  return thaiDateShortFormatter.format(timestamp);
+}
+
+export function formatDateTime(timestamp: number) {
   return `${formatDate(timestamp)} ${formatClock(timestamp)}`;
 }
 
-function truncate(value: string | null | undefined, head = 8, tail = 5) {
+export function truncate(value: string | null | undefined, head = 8, tail = 5) {
   if (!value) {
-    return "Unavailable";
+    return "ไม่ระบุ";
   }
 
   if (value.length <= head + tail + 3) {
@@ -117,7 +188,11 @@ function truncate(value: string | null | undefined, head = 8, tail = 5) {
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
-function getMessageDirection(message: MessageRecord) {
+export function formatNumber(index: number) {
+  return String(index).padStart(2, "0");
+}
+
+export function getMessageDirection(message: MessageRecord) {
   if (message.source === "web" || message.type === "outbound") {
     return "outbound";
   }
@@ -136,7 +211,7 @@ function getAvatarUrl(message: MessageRecord) {
 }
 
 function getDisplayName(message: MessageRecord) {
-  return message.displayName?.trim() || "Unknown user";
+  return message.displayName?.trim() || "ไม่ทราบชื่อ";
 }
 
 function getInitial(value: string | null | undefined) {
@@ -160,23 +235,20 @@ function classifyMessageType(message: MessageRecord): "text" | "image" | "link" 
   return "other";
 }
 
-function getMessagePreview(message: MessageRecord) {
+export function getMessagePreview(message: MessageRecord) {
   if (message.text?.trim()) {
     return message.text;
   }
 
   if (message.type === "image" || message.contentUrl) {
-    return "Image received";
+    return "มีรูปภาพแนบ";
   }
 
-  return `${message.type} event captured`;
+  return `${message.type} event`;
 }
 
 function getGroupName(message: MessageRecord) {
-  return (
-    message.rawPayload?.lineIdentity?.groupName?.trim() ||
-    `Group ${truncate(message.groupId, 6, 4)}`
-  );
+  return message.rawPayload?.lineIdentity?.groupName?.trim() || `กลุ่ม ${truncate(message.groupId, 6, 4)}`;
 }
 
 function getGroupStatus(messages: MessageRecord[]): GroupStatus {
@@ -268,9 +340,7 @@ export function buildGroupSummaries(messages: MessageRecord[]): GroupSummary[] {
 
   return Array.from(groups.entries())
     .map(([groupId, groupMessages]) => {
-      const sorted = [...groupMessages].sort(
-        (left, right) => Number(right.timestamp) - Number(left.timestamp),
-      );
+      const sorted = [...groupMessages].sort((left, right) => Number(right.timestamp) - Number(left.timestamp));
       const latest = sorted[0];
       const members = new Map<string, { userId: string; displayName: string; avatarUrl: string | null }>();
 
@@ -290,12 +360,12 @@ export function buildGroupSummaries(messages: MessageRecord[]): GroupSummary[] {
 
       return {
         groupId,
-        groupName: latest ? getGroupName(latest) : `Group ${truncate(groupId, 6, 4)}`,
+        groupName: latest ? getGroupName(latest) : `กลุ่ม ${truncate(groupId, 6, 4)}`,
         totalMessages: sorted.length,
         memberCount: members.size,
         lastMessageTime: latest ? Number(latest.timestamp) : null,
-        lastSync: latest ? formatDateTime(Number(latest.timestamp)) : "No sync yet",
-        lastMessagePreview: latest ? getMessagePreview(latest) : "No message captured",
+        lastSync: latest ? formatDateTime(Number(latest.timestamp)) : "ยังไม่มีการซิงก์",
+        lastMessagePreview: latest ? getMessagePreview(latest) : "ยังไม่มีข้อความ",
         lastMessageType: latest ? classifyMessageType(latest) : "other",
         healthSignal: getHealthSignal(sorted),
         status: getGroupStatus(sorted),
@@ -316,9 +386,7 @@ export function filterGroupSummaries(groups: GroupSummary[], filters: GroupFilte
     const matchesDate = group.lastMessageTime
       ? withinDateRange(group.lastMessageTime, filters.dateRange)
       : filters.dateRange === "all";
-
-    const matchesType =
-      filters.messageType === "all" || group.lastMessageType === filters.messageType;
+    const matchesType = filters.messageType === "all" || group.lastMessageType === filters.messageType;
 
     return matchesSearch && matchesStatus && matchesDate && matchesType;
   });
@@ -343,7 +411,7 @@ export function buildGroupConversation(messages: MessageRecord[], groupId: strin
 
 export function useAutoTrackMessages() {
   const [messages, setMessages] = useState<MessageRecord[]>([]);
-  const [status, setStatus] = useState("Waiting for LINE group activity");
+  const [status, setStatus] = useState("กำลังรอข้อมูลจากกลุ่ม LINE");
   const [error, setError] = useState<string | null>(null);
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
 
@@ -352,7 +420,12 @@ export function useAutoTrackMessages() {
 
     async function loadMessages() {
       try {
-        const response = await fetch("/api/messages", { cache: "no-store" });
+        const response = await fetch(`/api/messages?ts=${Date.now()}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        });
 
         if (!response.ok) {
           throw new Error("Unable to load messages");
@@ -373,15 +446,15 @@ export function useAutoTrackMessages() {
         setSetupMessage(data.configured === false ? data.setupMessage ?? null : null);
         setStatus(
           data.messages.length > 0
-            ? `Last sync ${formatDateTime(Number(data.messages[0].timestamp))}`
+            ? `ซิงก์ล่าสุด ${formatDateTime(Number(data.messages[0].timestamp))}`
             : data.configured === false
-              ? "Database not configured"
-              : "No messages captured yet",
+              ? "ยังไม่ได้ตั้งค่าฐานข้อมูล"
+              : "ยังไม่มีข้อมูลจากกลุ่ม",
         );
       } catch (loadError) {
         console.error(loadError);
         if (isMounted) {
-          setError("Unable to load LINE group activity right now.");
+          setError("ไม่สามารถโหลดข้อมูลกลุ่ม LINE ได้ในขณะนี้");
         }
       }
     }
@@ -395,25 +468,26 @@ export function useAutoTrackMessages() {
     };
   }, []);
 
-  return {
-    messages,
-    status,
-    error,
-    setupMessage,
-  };
+  return { messages, status, error, setupMessage };
 }
 
-export function LogoLockup() {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
-        <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-[linear-gradient(135deg,_#0D47A1,_#E53935)] text-[11px] font-bold text-white shadow-sm">
-          AH
+export function LogoLockup({ collapsed = false }: { collapsed?: boolean }) {
+  if (collapsed) {
+    return (
+      <div className="flex justify-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+          <Image src={autoHealthLineLogo} alt="AutoHealth" className="h-9 w-9 object-contain" priority />
         </div>
       </div>
-      <div>
-        <p className="text-sm font-semibold tracking-[-0.02em] text-slate-950">AutoTrack</p>
-        <p className="text-xs text-slate-500">AutoHealth Platform</p>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+      <Image src={autoHealthLogo} alt="AutoHealth" className="h-auto w-full object-contain" priority />
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        <p className="text-sm font-semibold tracking-[-0.02em] text-slate-950">Intelligence Center</p>
+        <p className="mt-1 text-xs text-slate-500">คอนโซลติดตามกลุ่ม AutoTrack</p>
       </div>
     </div>
   );
@@ -430,45 +504,87 @@ export function ConsoleShell({
   children: ReactNode;
   topBar?: ReactNode;
 }) {
-  return (
-    <main className="min-h-screen bg-[#FAFBFC] text-slate-900">
-      <div className="grid min-h-screen lg:grid-cols-[248px_minmax(0,1fr)]">
-        <aside className="border-r border-slate-200 bg-white">
-          <div className="flex h-full flex-col px-5 py-6">
-            <LogoLockup />
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const pathname = usePathname();
 
-            <nav className="mt-8 space-y-1">
-              <Link
-                href="/"
-                className="flex items-center justify-between rounded-xl bg-slate-950 px-3 py-2.5 text-sm font-medium text-white"
-              >
-                <span>Group Chats</span>
-                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">Live</span>
-              </Link>
-              <Link
-                href="/mini-app"
-                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
-              >
-                Mini App Report
-              </Link>
-              <Link
-                href="/liff"
-                className="flex items-center rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
-              >
-                LIFF Profile
-              </Link>
+  return (
+    <main className="min-h-screen bg-[#F5F7FB] text-slate-900">
+      <div
+        className="grid min-h-screen"
+        style={{ gridTemplateColumns: isSidebarCollapsed ? "88px minmax(0,1fr)" : "minmax(240px,20%) minmax(0,80%)" }}
+      >
+        <aside className="relative border-r border-slate-200 bg-white">
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed((current) => !current)}
+            className="absolute -right-3 top-1/2 z-20 hidden h-9 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition hover:text-slate-700 lg:flex"
+            aria-label={isSidebarCollapsed ? "ขยายเมนูด้านซ้าย" : "ย่อเมนูด้านซ้าย"}
+          >
+            {isSidebarCollapsed ? "›" : "‹"}
+          </button>
+
+          <div className={`flex h-full flex-col ${isSidebarCollapsed ? "px-3 py-6" : "px-5 py-6"}`}>
+            <LogoLockup collapsed={isSidebarCollapsed} />
+
+            <nav className="mt-7 space-y-2">
+              {navItems.map((item, index) => {
+                const isActive = item.activeMatch(pathname);
+
+                return (
+                  <Link
+                    key={`${item.label}-${item.href}-${index}`}
+                    href={item.href}
+                    className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                      isActive
+                        ? "bg-[#1D4ED8] text-white shadow-[0_8px_18px_rgba(29,78,216,0.18)]"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                    }`}
+                    title={item.label}
+                  >
+                    <span className="flex items-center gap-3">
+                      <span
+                        className={`inline-flex h-8 w-8 items-center justify-center rounded-xl text-[11px] font-semibold ${
+                          isActive ? "bg-white/15" : "bg-slate-100"
+                        }`}
+                      >
+                        {item.icon}
+                      </span>
+                      {!isSidebarCollapsed ? item.label : null}
+                    </span>
+                    {!isSidebarCollapsed && index === 1 ? (
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">Live</span>
+                    ) : null}
+                  </Link>
+                );
+              })}
             </nav>
 
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Console Story
-              </p>
-              <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                <li>1. AutoTrack joins LINE groups</li>
-                <li>2. Messages are captured into Supabase</li>
-                <li>3. Staff can review each group thread</li>
-                <li>4. Data is ready for AutoReport and AutoBrain</li>
-              </ol>
+            {!isSidebarCollapsed ? (
+              <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Console Story
+                </p>
+                <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                  <li>1. AutoTrack เข้าร่วมกลุ่ม LINE</li>
+                  <li>2. เก็บข้อความลง Supabase อัตโนมัติ</li>
+                  <li>3. ทีมดูแลตรวจแต่ละกลุ่มได้</li>
+                  <li>4. พร้อมต่อยอดสู่ AutoReport และ AutoBrain</li>
+                </ol>
+              </div>
+            ) : null}
+
+            <div
+              className={`mt-auto flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] ${isSidebarCollapsed ? "justify-center" : ""}`}
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#0D47A1] text-sm font-semibold text-white">
+                N
+              </div>
+              {!isSidebarCollapsed ? (
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-950">Nattapong S.</p>
+                  <p className="text-xs text-sky-600">Admin</p>
+                </div>
+              ) : null}
             </div>
           </div>
         </aside>
@@ -477,8 +593,10 @@ export function ConsoleShell({
           <header className="border-b border-slate-200 bg-white px-6 py-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h1 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">{title}</h1>
-                <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+                <h1 className="text-2xl font-bold text-slate-950">
+                  {title}
+                </h1>
+                <p className="mt-1 text-sm text-slate-500 md:text-base">{subtitle}</p>
               </div>
               {topBar ? <div className="flex flex-wrap items-center gap-3">{topBar}</div> : null}
             </div>
@@ -500,19 +618,19 @@ export function Avatar({
   displayName: string | null;
   size?: number;
 }) {
+  const [isImageBroken, setIsImageBroken] = useState(false);
+
   return (
     <div
       className="flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-sm font-semibold text-slate-600"
       style={{ width: size, height: size }}
     >
-      {avatarUrl ? (
+      {avatarUrl && !isImageBroken ? (
         <img
           src={avatarUrl}
           alt={displayName ?? "LINE user"}
           className="h-full w-full object-cover"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-          }}
+          onError={() => setIsImageBroken(true)}
         />
       ) : (
         <span>{getInitial(displayName)}</span>
@@ -524,24 +642,23 @@ export function Avatar({
 export function StatusBadge({ status }: { status: GroupStatus }) {
   return (
     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${statusToneMap[status]}`}>
-      {status}
+      {getStatusLabel(status)}
     </span>
   );
 }
 
 export function HealthSignalBadge({ signal }: { signal: HealthSignal }) {
   return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${healthSignalToneMap[signal]}`}
-    >
-      {signal}
+    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${healthSignalToneMap[signal]}`}>
+      {getHealthSignalLabel(signal)}
     </span>
   );
 }
 
 export function TypeBadge({ type }: { type: string }) {
   const tone = typeToneMap[type] ?? typeToneMap.other;
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>{type}</span>;
+
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>{getMessageTypeLabel(type)}</span>;
 }
 
 export function formatManagePreview(message: MessageRecord) {
@@ -556,10 +673,6 @@ export function resolveMessageIdentity(message: MessageRecord) {
   };
 }
 
-export function formatNumber(index: number) {
-  return String(index).padStart(2, "0");
-}
-
 export function getMessageType(message: MessageRecord) {
   return classifyMessageType(message);
 }
@@ -569,7 +682,7 @@ export function getMessageTimestamp(message: MessageRecord) {
 }
 
 export function getDirectionLabel(message: MessageRecord) {
-  return getMessageDirection(message) === "outbound" ? "Outbound" : "Inbound";
+  return getMessageDirection(message) === "outbound" ? "ขาออก" : "ขาเข้า";
 }
 
 export function EmptyPanel({
@@ -586,12 +699,3 @@ export function EmptyPanel({
     </div>
   );
 }
-
-export {
-  formatClock,
-  formatDate,
-  formatDateTime,
-  truncate,
-  getMessagePreview,
-  getMessageDirection,
-};
