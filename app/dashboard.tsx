@@ -11,6 +11,8 @@ type MessageRecord = {
   email: string | null;
   statusMessage: string | null;
   pictureUrl: string | null;
+  avatarUrl?: string | null;
+  profileImageUrl?: string | null;
   contentUrl: string | null;
   contentMimeType: string | null;
   source: string;
@@ -22,8 +24,15 @@ type MessageRecord = {
     lineIdentity?: {
       groupName?: string | null;
       error?: string | null;
+      pictureUrl?: string | null;
     } | null;
   } | null;
+};
+
+type ResolvedProfile = {
+  displayName: string | null;
+  userId: string | null;
+  avatarUrl: string | null;
 };
 
 function formatClock(timestamp: number) {
@@ -74,27 +83,50 @@ function getMessageLabel(message: MessageRecord) {
   return `${message.type} event captured`;
 }
 
+function getAvatarUrl(message: MessageRecord) {
+  return (
+    message.pictureUrl ??
+    message.avatarUrl ??
+    message.profileImageUrl ??
+    message.rawPayload?.lineIdentity?.pictureUrl ??
+    null
+  );
+}
+
+function getInitial(value: string | null | undefined) {
+  if (!value) {
+    return "?";
+  }
+
+  return value.trim().charAt(0).toUpperCase() || "?";
+}
+
 function UserAvatar({
-  pictureUrl,
+  avatarUrl,
   displayName,
-  size = "md",
+  size = 40,
 }: {
-  pictureUrl: string | null;
+  avatarUrl: string | null;
   displayName: string | null;
-  size?: "sm" | "md";
+  size?: number;
 }) {
-  const sizeClass = size === "sm" ? "h-8 w-8 rounded-xl" : "h-10 w-10 rounded-2xl";
+  const className =
+    "overflow-hidden rounded-full border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-600 font-semibold";
 
   return (
-    <div className={`${sizeClass} overflow-hidden bg-slate-200`}>
-      {pictureUrl ? (
+    <div className={className} style={{ width: size, height: size }}>
+      {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={pictureUrl}
+          src={avatarUrl}
           alt={displayName ?? "LINE user"}
           className="h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
         />
       ) : null}
+      {!avatarUrl ? <span>{getInitial(displayName)}</span> : null}
     </div>
   );
 }
@@ -158,6 +190,27 @@ export function Dashboard() {
     };
   }, []);
 
+  const profileByUserId = useMemo(() => {
+    const nextProfiles = new Map<string, ResolvedProfile>();
+
+    for (const message of messages) {
+      if (!message.userId) {
+        continue;
+      }
+
+      const current = nextProfiles.get(message.userId);
+      const candidate: ResolvedProfile = {
+        userId: message.userId,
+        displayName: message.displayName ?? current?.displayName ?? null,
+        avatarUrl: getAvatarUrl(message) ?? current?.avatarUrl ?? null,
+      };
+
+      nextProfiles.set(message.userId, candidate);
+    }
+
+    return nextProfiles;
+  }, [messages]);
+
   const liffProfile = useMemo(() => {
     return messages.find(
       (message) =>
@@ -186,6 +239,16 @@ export function Dashboard() {
       return accumulator;
     }, {});
   }, [messages]);
+
+  function resolveProfile(message: MessageRecord): ResolvedProfile {
+    const matchedProfile = message.userId ? profileByUserId.get(message.userId) : null;
+
+    return {
+      displayName: message.displayName ?? matchedProfile?.displayName ?? "Unknown user",
+      userId: message.userId ?? matchedProfile?.userId ?? null,
+      avatarUrl: getAvatarUrl(message) ?? matchedProfile?.avatarUrl ?? null,
+    };
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -315,6 +378,7 @@ export function Dashboard() {
                 ) : (
                   chatPreviewMessages.map((message) => {
                     const direction = getDirection(message);
+                    const profile = resolveProfile(message);
 
                     return (
                       <div
@@ -322,20 +386,20 @@ export function Dashboard() {
                         className={`flex ${direction === "outbound" ? "justify-end" : "justify-start"}`}
                       >
                         <div
-                          className={`flex max-w-[90%] gap-3 ${
+                          className={`flex max-w-[92%] items-end gap-3 ${
                             direction === "outbound" ? "flex-row-reverse" : "flex-row"
                           }`}
                         >
                           <UserAvatar
-                            pictureUrl={message.pictureUrl}
-                            displayName={message.displayName}
-                            size="md"
+                            avatarUrl={profile.avatarUrl}
+                            displayName={profile.displayName}
+                            size={40}
                           />
                           <div
-                            className={`max-w-[85%] rounded-[24px] px-4 py-3 shadow-sm ${
+                            className={`max-w-[85%] rounded-[24px] border px-4 py-3 shadow-sm ${
                               direction === "outbound"
-                                ? "rounded-br-md bg-emerald-500 text-white"
-                                : "rounded-bl-md bg-white text-slate-900"
+                                ? "rounded-br-md border-emerald-400 bg-emerald-500 text-white"
+                                : "rounded-bl-md border-slate-200 bg-white text-slate-900"
                             }`}
                           >
                             <p className="text-sm leading-6">{getMessageLabel(message)}</p>
@@ -355,15 +419,15 @@ export function Dashboard() {
                               </a>
                             ) : null}
                             <div
-                              className={`mt-2 flex items-center gap-2 text-[11px] ${
+                              className={`mt-3 space-y-1 text-[11px] ${
                                 direction === "outbound" ? "text-emerald-50/90" : "text-slate-500"
                               }`}
                             >
-                              <span>{message.displayName ?? truncate(message.userId, 8, 4)}</span>
-                              {message.rawPayload?.lineIdentity?.groupName ? (
-                                <span>{message.rawPayload.lineIdentity.groupName}</span>
-                              ) : null}
-                              <span>{formatClock(Number(message.timestamp))}</span>
+                              <p className="font-semibold">
+                                {profile.displayName ?? "Unknown user"}
+                              </p>
+                              <p>{formatClock(Number(message.timestamp))}</p>
+                              <p>{truncate(profile.userId, 10, 4)}</p>
                             </div>
                           </div>
                         </div>
@@ -417,7 +481,7 @@ export function Dashboard() {
           <div className="rounded-[30px] border border-slate-200/80 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-slate-950">Messages (Data Table)</h2>
+                <h2 className="text-2xl font-semibold text-slate-950">Messages (Raw Data)</h2>
                 <p className="mt-1 text-sm text-slate-500">
                   Polling `/api/messages` every 3 seconds from Supabase.
                 </p>
@@ -441,7 +505,7 @@ export function Dashboard() {
                     </div>
 
                     <div className="overflow-hidden rounded-[28px] border border-slate-200">
-                      <div className="grid grid-cols-[minmax(0,1.3fr)_110px_1fr_140px] gap-4 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      <div className="grid grid-cols-[minmax(0,1.2fr)_110px_1.1fr_140px] gap-4 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         <span>Message</span>
                         <span>Direction</span>
                         <span>User</span>
@@ -450,11 +514,12 @@ export function Dashboard() {
 
                       {dayMessages.map((message) => {
                         const direction = getDirection(message);
+                        const profile = resolveProfile(message);
 
                         return (
                           <div
                             key={message.id}
-                            className="grid grid-cols-[minmax(0,1.3fr)_110px_1fr_140px] gap-4 border-t border-slate-200 px-4 py-4 text-sm text-slate-700"
+                            className="grid grid-cols-[minmax(0,1.2fr)_110px_1.1fr_140px] gap-4 border-t border-slate-200 px-4 py-4 text-sm text-slate-700"
                           >
                             <div className="space-y-3">
                               <p className="leading-6 text-slate-900">{getMessageLabel(message)}</p>
@@ -468,22 +533,9 @@ export function Dashboard() {
                                   />
                                 </a>
                               ) : null}
-                              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                                  {message.source}
-                                </span>
-                                <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                                  {message.type}
-                                </span>
-                                {message.contentMimeType ? (
-                                  <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                                    {message.contentMimeType}
-                                  </span>
-                                ) : null}
-                              </div>
                             </div>
 
-                            <div>
+                            <div className="space-y-2">
                               <span
                                 className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
                                   direction === "outbound"
@@ -493,20 +545,25 @@ export function Dashboard() {
                               >
                                 {direction}
                               </span>
+                              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1">
+                                  {message.type}
+                                </span>
+                              </div>
                             </div>
 
                             <div className="flex items-start gap-3">
                               <UserAvatar
-                                pictureUrl={message.pictureUrl}
-                                displayName={message.displayName}
-                                size="sm"
+                                avatarUrl={profile.avatarUrl}
+                                displayName={profile.displayName}
+                                size={40}
                               />
                               <div className="space-y-1">
                                 <p className="font-medium text-slate-900">
-                                  {message.displayName ?? "Unknown user"}
+                                  {profile.displayName ?? "Unknown user"}
                                 </p>
                                 <p className="truncate text-slate-500">
-                                  {message.email ?? truncate(message.userId)}
+                                  {truncate(profile.userId, 10, 4)}
                                 </p>
                                 {message.rawPayload?.lineIdentity?.groupName ? (
                                   <p className="truncate text-slate-400">
