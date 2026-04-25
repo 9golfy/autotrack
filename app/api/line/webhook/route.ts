@@ -602,6 +602,10 @@ export async function POST(request: NextRequest) {
       });
 
       for (const event of messageEvents) {
+        if (event.source?.type !== "user") {
+          continue;
+        }
+
         await replyWithHealthCard(event, request.nextUrl.origin);
       }
     } catch (error) {
