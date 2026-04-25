@@ -74,6 +74,31 @@ function getMessageLabel(message: MessageRecord) {
   return `${message.type} event captured`;
 }
 
+function UserAvatar({
+  pictureUrl,
+  displayName,
+  size = "md",
+}: {
+  pictureUrl: string | null;
+  displayName: string | null;
+  size?: "sm" | "md";
+}) {
+  const sizeClass = size === "sm" ? "h-8 w-8 rounded-xl" : "h-10 w-10 rounded-2xl";
+
+  return (
+    <div className={`${sizeClass} overflow-hidden bg-slate-200`}>
+      {pictureUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={pictureUrl}
+          alt={displayName ?? "LINE user"}
+          className="h-full w-full object-cover"
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function Dashboard() {
   const [messages, setMessages] = useState<MessageRecord[]>([]);
   const [input, setInput] = useState("");
@@ -297,38 +322,49 @@ export function Dashboard() {
                         className={`flex ${direction === "outbound" ? "justify-end" : "justify-start"}`}
                       >
                         <div
-                          className={`max-w-[85%] rounded-[24px] px-4 py-3 shadow-sm ${
-                            direction === "outbound"
-                              ? "rounded-br-md bg-emerald-500 text-white"
-                              : "rounded-bl-md bg-white text-slate-900"
+                          className={`flex max-w-[90%] gap-3 ${
+                            direction === "outbound" ? "flex-row-reverse" : "flex-row"
                           }`}
                         >
-                          <p className="text-sm leading-6">{getMessageLabel(message)}</p>
-                          {message.contentUrl ? (
-                            <a
-                              href={message.contentUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-3 block"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={message.contentUrl}
-                                alt="LINE attachment"
-                                className="max-h-60 rounded-2xl border border-black/5 object-cover"
-                              />
-                            </a>
-                          ) : null}
+                          <UserAvatar
+                            pictureUrl={message.pictureUrl}
+                            displayName={message.displayName}
+                            size="md"
+                          />
                           <div
-                            className={`mt-2 flex items-center gap-2 text-[11px] ${
-                              direction === "outbound" ? "text-emerald-50/90" : "text-slate-500"
+                            className={`max-w-[85%] rounded-[24px] px-4 py-3 shadow-sm ${
+                              direction === "outbound"
+                                ? "rounded-br-md bg-emerald-500 text-white"
+                                : "rounded-bl-md bg-white text-slate-900"
                             }`}
                           >
-                            <span>{message.displayName ?? truncate(message.userId, 8, 4)}</span>
-                            {message.rawPayload?.lineIdentity?.groupName ? (
-                              <span>{message.rawPayload.lineIdentity.groupName}</span>
+                            <p className="text-sm leading-6">{getMessageLabel(message)}</p>
+                            {message.contentUrl ? (
+                              <a
+                                href={message.contentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-3 block"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={message.contentUrl}
+                                  alt="LINE attachment"
+                                  className="max-h-60 rounded-2xl border border-black/5 object-cover"
+                                />
+                              </a>
                             ) : null}
-                            <span>{formatClock(Number(message.timestamp))}</span>
+                            <div
+                              className={`mt-2 flex items-center gap-2 text-[11px] ${
+                                direction === "outbound" ? "text-emerald-50/90" : "text-slate-500"
+                              }`}
+                            >
+                              <span>{message.displayName ?? truncate(message.userId, 8, 4)}</span>
+                              {message.rawPayload?.lineIdentity?.groupName ? (
+                                <span>{message.rawPayload.lineIdentity.groupName}</span>
+                              ) : null}
+                              <span>{formatClock(Number(message.timestamp))}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -459,20 +495,27 @@ export function Dashboard() {
                               </span>
                             </div>
 
-                            <div className="space-y-1">
-                              <p className="font-medium text-slate-900">
-                                {message.displayName ?? "Unknown user"}
-                              </p>
-                              <p className="truncate text-slate-500">
-                                {message.email ?? truncate(message.userId)}
-                              </p>
-                              {message.rawPayload?.lineIdentity?.groupName ? (
-                                <p className="truncate text-slate-400">
-                                  {message.rawPayload.lineIdentity.groupName}
+                            <div className="flex items-start gap-3">
+                              <UserAvatar
+                                pictureUrl={message.pictureUrl}
+                                displayName={message.displayName}
+                                size="sm"
+                              />
+                              <div className="space-y-1">
+                                <p className="font-medium text-slate-900">
+                                  {message.displayName ?? "Unknown user"}
                                 </p>
-                              ) : message.groupId ? (
-                                <p className="truncate text-slate-400">Group {message.groupId}</p>
-                              ) : null}
+                                <p className="truncate text-slate-500">
+                                  {message.email ?? truncate(message.userId)}
+                                </p>
+                                {message.rawPayload?.lineIdentity?.groupName ? (
+                                  <p className="truncate text-slate-400">
+                                    {message.rawPayload.lineIdentity.groupName}
+                                  </p>
+                                ) : message.groupId ? (
+                                  <p className="truncate text-slate-400">Group {message.groupId}</p>
+                                ) : null}
+                              </div>
                             </div>
 
                             <div className="text-slate-500">
