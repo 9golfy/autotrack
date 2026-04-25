@@ -2,6 +2,7 @@
 "use client";
 
 import liff from "@line/liff";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type LiffProfile = {
@@ -57,7 +58,7 @@ async function logEvent(payload: {
   text?: string;
   rawPayload?: unknown;
 }) {
-  await fetch("/api/messages", {
+  const response = await fetch("/api/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -67,6 +68,34 @@ async function logEvent(payload: {
       source: "liff",
     }),
   });
+
+  if (!response.ok) {
+    throw new Error("Failed to save LIFF event");
+  }
+}
+
+function SectionCard({
+  title,
+  badge,
+  children,
+}: {
+  title: string;
+  badge?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+        {badge ? (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+            {badge}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
 }
 
 export default function LiffPage() {
@@ -84,6 +113,7 @@ export default function LiffPage() {
   const [isReady, setIsReady] = useState(false);
   const [feedback, setFeedback] = useState("Initializing LIFF...");
   const [actionState, setActionState] = useState<string | null>(null);
+  const [profileSaveState, setProfileSaveState] = useState("Waiting for LIFF login...");
 
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
@@ -94,6 +124,7 @@ export default function LiffPage() {
       if (!liffId) {
         if (isMounted) {
           setFeedback("Add NEXT_PUBLIC_LIFF_ID to start the LIFF app.");
+          setProfileSaveState("LIFF ID is missing.");
           setEnvironment((current) => ({
             ...current,
             sdkVersion: "Missing LIFF ID",
@@ -135,32 +166,38 @@ export default function LiffPage() {
         });
         setIsReady(true);
         setFeedback("LIFF is ready inside LINE.");
+        setProfileSaveState("Saving profile to Supabase...");
 
-        void logEvent({
-          event: "liff-profile",
-          userId: resolvedProfile.userId,
-          displayName: resolvedProfile.displayName,
-          email: resolvedIdToken?.email,
-          statusMessage: resolvedProfile.statusMessage,
-          pictureUrl: resolvedProfile.pictureUrl,
-          rawPayload: {
-            profile: resolvedProfile,
-            idToken: resolvedIdToken
-              ? {
-                  email: resolvedIdToken.email,
-                  sub: resolvedIdToken.sub,
-                  name: resolvedIdToken.name,
-                }
-              : null,
-          },
-        }).catch((error) => {
+        try {
+          await logEvent({
+            event: "liff-profile",
+            userId: resolvedProfile.userId,
+            displayName: resolvedProfile.displayName,
+            email: resolvedIdToken?.email,
+            statusMessage: resolvedProfile.statusMessage,
+            pictureUrl: resolvedProfile.pictureUrl,
+            rawPayload: {
+              profile: resolvedProfile,
+              idToken: resolvedIdToken
+                ? {
+                    email: resolvedIdToken.email,
+                    sub: resolvedIdToken.sub,
+                    name: resolvedIdToken.name,
+                  }
+                : null,
+            },
+          });
+          setProfileSaveState("Profile saved to Supabase successfully.");
+        } catch (error) {
           console.error("Failed to sync LIFF profile", error);
-        });
+          setProfileSaveState("LIFF loaded, but saving profile to Supabase failed.");
+        }
       } catch (error) {
         console.error(error);
 
         if (isMounted) {
           setFeedback("LIFF initialization failed. Open this page inside LINE and verify the LIFF ID.");
+          setProfileSaveState("Unable to initialize LIFF.");
           setEnvironment((current) => ({
             ...current,
             sdkVersion: "Initialization failed",
@@ -201,7 +238,7 @@ export default function LiffPage() {
         },
       ]);
 
-      void logEvent({
+      await logEvent({
         event: "liff-message",
         userId: profile?.userId,
         displayName: profile?.displayName,
@@ -212,8 +249,6 @@ export default function LiffPage() {
         rawPayload: {
           action: "sendMessages",
         },
-      }).catch((error) => {
-        console.error("Failed to log LIFF message", error);
       });
 
       setActionState("Message sent from LIFF.");
@@ -232,7 +267,7 @@ export default function LiffPage() {
         },
       ]);
 
-      void logEvent({
+      await logEvent({
         event: "liff-share",
         userId: profile?.userId,
         displayName: profile?.displayName,
@@ -240,8 +275,6 @@ export default function LiffPage() {
         rawPayload: {
           action: "shareTargetPicker",
         },
-      }).catch((error) => {
-        console.error("Failed to log LIFF share event", error);
       });
 
       setActionState("Share Target Picker opened.");
@@ -255,15 +288,13 @@ export default function LiffPage() {
     try {
       const result = await liff.scanCodeV2();
 
-      void logEvent({
+      await logEvent({
         event: "liff-qr-scan",
         userId: profile?.userId,
         displayName: profile?.displayName,
         email: idToken?.email,
         text: result.value ?? "QR scan completed",
         rawPayload: result,
-      }).catch((error) => {
-        console.error("Failed to log LIFF QR event", error);
       });
 
       setActionState(result.value ? `QR code: ${result.value}` : "QR scan completed.");
@@ -307,15 +338,18 @@ export default function LiffPage() {
         <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
+              <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                LINE Mini App
+              </span>
               <h1 className="text-4xl font-semibold tracking-tight text-slate-950">AutoTrack</h1>
               <p className="max-w-xl text-sm leading-6 text-slate-500">
-                After login, fetch data from the LINE API and mirror key activity back into the
-                main dashboard.
+                Fetch LINE profile data, show LIFF authentication details, and store the profile in
+                Supabase for the investor walkthrough.
               </p>
             </div>
 
-            <div className="flex items-start gap-3 rounded-3xl bg-slate-50 p-3 sm:min-w-[280px]">
-              <div className="relative h-14 w-14 overflow-hidden rounded-full bg-slate-200">
+            <div className="flex items-start gap-3 rounded-3xl bg-slate-50 p-3 sm:min-w-[300px]">
+              <div className="relative h-16 w-16 overflow-hidden rounded-full bg-slate-200">
                 {profile?.pictureUrl ? (
                   <img
                     src={profile.pictureUrl}
@@ -337,14 +371,8 @@ export default function LiffPage() {
 
         <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
           <div className="space-y-4">
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-950">Environment</h2>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  LIFF
-                </span>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <SectionCard title="Environment" badge="LIFF">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {sections.map((item) => (
                   <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.16em] text-slate-500">
@@ -354,11 +382,10 @@ export default function LiffPage() {
                   </div>
                 ))}
               </div>
-            </section>
+            </SectionCard>
 
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Profile</h2>
-              <div className="mt-4 flex items-start gap-4">
+            <SectionCard title="Profile">
+              <div className="flex items-start gap-4">
                 <div className="relative h-20 w-20 overflow-hidden rounded-full bg-slate-200">
                   {profile?.pictureUrl ? (
                     <img
@@ -384,6 +411,12 @@ export default function LiffPage() {
                     </p>
                   </div>
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Email</p>
+                    <p className="mt-1 truncate text-sm font-medium text-slate-900">
+                      {profileEmail}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.16em] text-slate-500">
                       Status message
                     </p>
@@ -391,23 +424,14 @@ export default function LiffPage() {
                       {profile?.statusMessage ?? "No status message"}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Email</p>
-                    <p className="mt-1 truncate text-sm font-medium text-slate-900">
-                      {profileEmail}
-                    </p>
-                  </div>
                 </div>
               </div>
-            </section>
+            </SectionCard>
 
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Authentication</h2>
-              <div className="mt-4 space-y-3">
+            <SectionCard title="Authentication">
+              <div className="space-y-3">
                 <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">
-                    Access Token
-                  </p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Access Token</p>
                   <p className="mt-2 break-all text-sm text-slate-900">
                     {truncate(accessToken, 32, 18)}
                   </p>
@@ -418,14 +442,16 @@ export default function LiffPage() {
                     {truncate(JSON.stringify(idToken), 48, 18)}
                   </p>
                 </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  {profileSaveState}
+                </div>
               </div>
-            </section>
+            </SectionCard>
           </div>
 
           <div className="space-y-4">
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Message</h2>
-              <div className="mt-4 grid gap-3">
+            <SectionCard title="Message">
+              <div className="grid gap-3">
                 <button
                   type="button"
                   onClick={() => void handleSendMessages()}
@@ -443,25 +469,21 @@ export default function LiffPage() {
                   Share Target Picker
                 </button>
               </div>
-            </section>
+            </SectionCard>
 
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Camera</h2>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => void handleScanQrCode()}
-                  disabled={!isReady}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                >
-                  Scan QR Code
-                </button>
-              </div>
-            </section>
+            <SectionCard title="Camera">
+              <button
+                type="button"
+                onClick={() => void handleScanQrCode()}
+                disabled={!isReady}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Scan QR Code
+              </button>
+            </SectionCard>
 
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Window</h2>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <SectionCard title="Window">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={handleOpenWindow}
@@ -479,31 +501,27 @@ export default function LiffPage() {
                   Close Window
                 </button>
               </div>
-            </section>
+            </SectionCard>
 
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Shortcut</h2>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => void handleAddShortcut()}
-                  disabled={!isReady}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                >
-                  Add Shortcut
-                </button>
-              </div>
-            </section>
+            <SectionCard title="Shortcut">
+              <button
+                type="button"
+                onClick={() => void handleAddShortcut()}
+                disabled={!isReady}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Add Shortcut
+              </button>
+            </SectionCard>
 
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Status</h2>
-              <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <SectionCard title="Status" badge="Live">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                 <p>{actionState ?? feedback}</p>
                 <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400">
                   Dashboard URL: / | LIFF URL: /liff
                 </p>
               </div>
-            </section>
+            </SectionCard>
           </div>
         </div>
       </div>
