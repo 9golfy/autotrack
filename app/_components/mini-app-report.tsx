@@ -74,11 +74,6 @@ function getDayKey(timestamp: number) {
   ).padStart(2, "0")}`;
 }
 
-function getAgeLabel(ageLabel: string | undefined) {
-  const match = ageLabel?.match(/(\d+)/);
-  return match ? `อายุ ${match[1]} ปี` : "อายุ 72 ปี";
-}
-
 function shortenUserId(userId: string | null | undefined) {
   if (!userId) {
     return "Unknown";
@@ -944,20 +939,13 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
           <div className="space-y-5">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">AutoHealth Mini App</p>
-              <p className="mt-4 text-sm font-medium text-white/80">📍 กลุ่ม: {groupName}</p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em]">รายงานสุขภาพประจำวัน</h1>
-              <div className="mt-4 flex flex-wrap gap-2 text-sm text-white/80">
-                <span>{getAgeLabel(report.ageLabel)}</span>
-                <span>•</span>
-                <span>วันนี้</span>
-              </div>
+              <p className="mt-4 text-sm font-medium text-white/80">รายงานสุขภาพประจำวัน</p>
+              <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em]">กลุ่ม: {groupName}</h1>
+              <p className="mt-3 text-2xl font-semibold tracking-[-0.04em]">สุขภาพโดยรวม: {report.statusLabel}</p>
+              
             </div>
 
-            <div className="rounded-[28px] bg-white/14 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">Health Status</p>
-              <p className="mt-3 text-2xl font-semibold tracking-[-0.04em]">สุขภาพโดยรวม: {report.statusLabel}</p>
-              <p className="mt-4 text-sm leading-7 text-white/85">{report.aiSummary}</p>
-            </div>
+            
           </div>
         </section>
 
