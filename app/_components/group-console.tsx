@@ -2,12 +2,10 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { buildHealthReport } from "@/lib/health-report";
-import autoHealthLogo from "@/logo/Auto_Health_Logo_Horizontal_300.png";
 
 export type MessageRecord = {
   id: string;
@@ -409,7 +407,9 @@ export function LogoLockup() {
   return (
     <div className="flex items-center gap-3">
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
-        <Image src={autoHealthLogo} alt="AutoHealth" width={28} height={28} className="h-7 w-7 object-contain" />
+        <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-[linear-gradient(135deg,_#0D47A1,_#E53935)] text-[11px] font-bold text-white shadow-sm">
+          AH
+        </div>
       </div>
       <div>
         <p className="text-sm font-semibold tracking-[-0.02em] text-slate-950">AutoTrack</p>
