@@ -107,3 +107,28 @@ LINE_MEDIA_BUCKET
 5. Watch the right panel refresh from `/api/messages`.
 6. Open `/liff` inside the LINE app, let LIFF auto-login, and use the mini-app actions.
 7. Confirm the rows in Supabase.
+
+## Historical AutoHealth context import
+
+The context import adds structured metadata to the existing Supabase `Message` table:
+
+```bash
+# Apply this SQL in Supabase SQL Editor first:
+supabase/migrations/add_message_context_columns.sql
+
+# Dependency is already in package.json, install if needed:
+npm install @supabase/supabase-js
+
+# Required server-side env:
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+
+# Import in batches of 100. Duplicate messageId rows are skipped.
+npx tsx scripts/import-autohealth-context-messages.ts
+```
+
+Source file expected by the script:
+
+```text
+data/autohealth_context_messages_apr_2026.json
+```

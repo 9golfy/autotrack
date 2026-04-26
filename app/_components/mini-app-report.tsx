@@ -12,70 +12,49 @@ type BpStatus = "normal" | "watch" | "high" | "consult";
 
 type BloodPressurePoint = {
   day: number;
-  dateLabel: string;
   systolic: number;
   diastolic: number;
   status: BpStatus;
 };
 
-const BLOOD_PRESSURE_POINTS: BloodPressurePoint[] = [
-  { day: 1, dateLabel: "1 พ.ค.", systolic: 123, diastolic: 106, status: "normal" },
-  { day: 2, dateLabel: "2 พ.ค.", systolic: 129, diastolic: 109, status: "normal" },
-  { day: 3, dateLabel: "3 พ.ค.", systolic: 122, diastolic: 105, status: "watch" },
-  { day: 4, dateLabel: "4 พ.ค.", systolic: 118, diastolic: 102, status: "watch" },
-  { day: 5, dateLabel: "5 พ.ค.", systolic: 121, diastolic: 105, status: "watch" },
-  { day: 6, dateLabel: "6 พ.ค.", systolic: 128, diastolic: 109, status: "watch" },
-  { day: 7, dateLabel: "7 พ.ค.", systolic: 127, diastolic: 108, status: "high" },
-  { day: 8, dateLabel: "8 พ.ค.", systolic: 134, diastolic: 113, status: "high" },
-  { day: 9, dateLabel: "9 พ.ค.", systolic: 134, diastolic: 113, status: "high" },
-  { day: 10, dateLabel: "10 พ.ค.", systolic: 134, diastolic: 112, status: "high" },
-  { day: 11, dateLabel: "11 พ.ค.", systolic: 125, diastolic: 108, status: "watch" },
-  { day: 12, dateLabel: "12 พ.ค.", systolic: 126, diastolic: 107, status: "watch" },
-  { day: 13, dateLabel: "13 พ.ค.", systolic: 124, diastolic: 105, status: "watch" },
-  { day: 14, dateLabel: "14 พ.ค.", systolic: 121, diastolic: 103, status: "consult" },
-  { day: 15, dateLabel: "15 พ.ค.", systolic: 128, diastolic: 106, status: "consult" },
-  { day: 16, dateLabel: "16 พ.ค.", systolic: 134, diastolic: 109, status: "watch" },
-  { day: 17, dateLabel: "17 พ.ค.", systolic: 128, diastolic: 109, status: "watch" },
-  { day: 18, dateLabel: "18 พ.ค.", systolic: 123, diastolic: 107, status: "high" },
-  { day: 19, dateLabel: "19 พ.ค.", systolic: 127, diastolic: 103, status: "high" },
-  { day: 20, dateLabel: "20 พ.ค.", systolic: 134, diastolic: 103, status: "watch" },
-  { day: 21, dateLabel: "21 พ.ค.", systolic: 134, diastolic: 104, status: "normal" },
-  { day: 22, dateLabel: "22 พ.ค.", systolic: 140, diastolic: 109, status: "watch" },
-  { day: 23, dateLabel: "23 พ.ค.", systolic: 132, diastolic: 108, status: "watch" },
-  { day: 24, dateLabel: "24 พ.ค.", systolic: 138, diastolic: 106, status: "watch" },
-  { day: 25, dateLabel: "25 พ.ค.", systolic: 145, diastolic: 110, status: "watch" },
-  { day: 26, dateLabel: "26 พ.ค.", systolic: 136, diastolic: 110, status: "normal" },
-  { day: 27, dateLabel: "27 พ.ค.", systolic: 132, diastolic: 110, status: "normal" },
-  { day: 28, dateLabel: "28 พ.ค.", systolic: 126, diastolic: 109, status: "normal" },
-  { day: 29, dateLabel: "29 พ.ค.", systolic: 125, diastolic: 108, status: "normal" },
-  { day: 30, dateLabel: "30 พ.ค.", systolic: 119, diastolic: 106, status: "normal" },
+const BP_POINTS: BloodPressurePoint[] = [
+  { day: 1, systolic: 123, diastolic: 106, status: "normal" },
+  { day: 2, systolic: 129, diastolic: 109, status: "normal" },
+  { day: 3, systolic: 122, diastolic: 105, status: "watch" },
+  { day: 4, systolic: 118, diastolic: 102, status: "watch" },
+  { day: 5, systolic: 121, diastolic: 105, status: "watch" },
+  { day: 6, systolic: 128, diastolic: 109, status: "watch" },
+  { day: 7, systolic: 127, diastolic: 108, status: "high" },
+  { day: 8, systolic: 134, diastolic: 113, status: "high" },
+  { day: 9, systolic: 134, diastolic: 113, status: "high" },
+  { day: 10, systolic: 134, diastolic: 112, status: "high" },
+  { day: 11, systolic: 125, diastolic: 108, status: "watch" },
+  { day: 12, systolic: 126, diastolic: 107, status: "watch" },
+  { day: 13, systolic: 124, diastolic: 105, status: "watch" },
+  { day: 14, systolic: 121, diastolic: 103, status: "consult" },
+  { day: 15, systolic: 128, diastolic: 106, status: "consult" },
+  { day: 16, systolic: 134, diastolic: 109, status: "watch" },
+  { day: 17, systolic: 128, diastolic: 109, status: "watch" },
+  { day: 18, systolic: 123, diastolic: 107, status: "high" },
+  { day: 19, systolic: 127, diastolic: 103, status: "high" },
+  { day: 20, systolic: 134, diastolic: 103, status: "watch" },
+  { day: 21, systolic: 134, diastolic: 104, status: "normal" },
+  { day: 22, systolic: 140, diastolic: 109, status: "watch" },
+  { day: 23, systolic: 132, diastolic: 108, status: "watch" },
+  { day: 24, systolic: 138, diastolic: 106, status: "watch" },
+  { day: 25, systolic: 145, diastolic: 110, status: "watch" },
+  { day: 26, systolic: 136, diastolic: 110, status: "normal" },
+  { day: 27, systolic: 132, diastolic: 110, status: "normal" },
+  { day: 28, systolic: 126, diastolic: 109, status: "normal" },
+  { day: 29, systolic: 125, diastolic: 108, status: "normal" },
+  { day: 30, systolic: 119, diastolic: 106, status: "normal" },
 ];
 
-const STATUS_STYLE: Record<BpStatus, { label: string; color: string; bg: string; ring: string }> = {
-  normal: {
-    label: "ปกติ (Normal)",
-    color: "text-emerald-700",
-    bg: "bg-emerald-500",
-    ring: "ring-emerald-100",
-  },
-  watch: {
-    label: "เฝ้าระวัง (Watch)",
-    color: "text-amber-700",
-    bg: "bg-amber-400",
-    ring: "ring-amber-100",
-  },
-  high: {
-    label: "สูง (High)",
-    color: "text-orange-700",
-    bg: "bg-orange-500",
-    ring: "ring-orange-100",
-  },
-  consult: {
-    label: "ควรปรึกษาแพทย์ (Consult)",
-    color: "text-red-700",
-    bg: "bg-red-500",
-    ring: "ring-red-100",
-  },
+const STATUS_META: Record<BpStatus, { label: string; className: string }> = {
+  normal: { label: "ปกติ (Normal)", className: "bg-[#22C55E]" },
+  watch: { label: "เฝ้าระวัง (Watch)", className: "bg-[#F59E0B]" },
+  high: { label: "สูง (High)", className: "bg-[#F97316]" },
+  consult: { label: "ควรปรึกษาแพทย์ (Consult)", className: "bg-[#EF4444]" },
 };
 
 function getGroupName(messages: MessageRecord[], selectedGroupId: string | null) {
@@ -87,127 +66,156 @@ function getGroupName(messages: MessageRecord[], selectedGroupId: string | null)
 }
 
 function getPatientAvatar(messages: MessageRecord[], selectedGroupId: string | null) {
-  return (
-    messages.find((message) => message.groupId === selectedGroupId && message.pictureUrl)?.pictureUrl ??
-    null
-  );
+  return messages.find((message) => message.groupId === selectedGroupId && message.pictureUrl)?.pictureUrl ?? null;
 }
 
-function AppIcon({ name }: { name: "back" | "home" | "more" | "edit" | "bell" | "eye" | "doc" | "shield" }) {
-  const common = "h-6 w-6 stroke-current";
-
-  if (name === "back") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M15 18 9 12l6-6" />
-      </svg>
-    );
-  }
-
-  if (name === "home") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="m3 11 9-8 9 8" />
-        <path d="M5 10v10h5v-6h4v6h5V10" />
-      </svg>
-    );
-  }
+function Icon({
+  name,
+  className = "h-6 w-6",
+}: {
+  name:
+    | "back"
+    | "home"
+    | "more"
+    | "edit"
+    | "bell"
+    | "eye"
+    | "doc"
+    | "shield"
+    | "calendar"
+    | "chevron"
+    | "heart"
+    | "plus"
+    | "trend"
+    | "report"
+    | "user";
+  className?: string;
+}) {
+  const base = `${className} shrink-0`;
 
   if (name === "more") {
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" className={common}>
-        <circle cx="5" cy="12" r="1.8" />
-        <circle cx="12" cy="12" r="1.8" />
-        <circle cx="19" cy="12" r="1.8" />
+      <svg viewBox="0 0 24 24" fill="currentColor" className={base} aria-hidden="true">
+        <circle cx="5" cy="12" r="1.9" />
+        <circle cx="12" cy="12" r="1.9" />
+        <circle cx="19" cy="12" r="1.9" />
       </svg>
     );
   }
 
-  if (name === "edit") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+  const paths: Record<string, React.ReactNode> = {
+    back: <path d="M15 18 9 12l6-6" />,
+    home: (
+      <>
+        <path d="m3 11 9-8 9 8" />
+        <path d="M5 10v10h5v-6h4v6h5V10" />
+      </>
+    ),
+    edit: (
+      <>
+        <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" />
         <path d="m13.5 6.5 4 4" />
-      </svg>
-    );
-  }
-
-  if (name === "bell") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+      </>
+    ),
+    bell: (
+      <>
         <path d="M18 9a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
         <path d="M10 21h4" />
-      </svg>
-    );
-  }
-
-  if (name === "eye") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      </>
+    ),
+    eye: (
+      <>
         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
         <circle cx="12" cy="12" r="3" />
-      </svg>
-    );
-  }
-
-  if (name === "doc") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      </>
+    ),
+    doc: (
+      <>
         <path d="M7 3h7l4 4v14H7V3Z" />
         <path d="M14 3v5h5M9 13h6M9 17h6" />
-      </svg>
-    );
-  }
+      </>
+    ),
+    shield: (
+      <>
+        <path d="M12 3 5 6v5c0 5 3.5 8.5 7 10 3.5-1.5 7-5 7-10V6l-7-3Z" />
+        <path d="M9 12h6M12 9v6" />
+      </>
+    ),
+    calendar: (
+      <>
+        <path d="M7 3v4M17 3v4M4 9h16M5 5h14v16H5z" />
+      </>
+    ),
+    chevron: <path d="m9 18 6-6-6-6" />,
+    heart: (
+      <>
+        <path d="M12 21s-7-4.5-9-9.5A5 5 0 0 1 12 7a5 5 0 0 1 9 4.5C19 16.5 12 21 12 21Z" />
+        <path d="M8 12h2l1-2 2 5 1-3h2" />
+      </>
+    ),
+    plus: <path d="M12 5v14M5 12h14" />,
+    trend: (
+      <>
+        <path d="m4 16 5-5 4 4 7-8" />
+        <path d="M15 7h5v5" />
+      </>
+    ),
+    report: (
+      <>
+        <path d="M8 4h8l3 3v13H5V4z" />
+        <path d="M16 4v4h4M8 12h8M8 16h5" />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </>
+    ),
+  };
 
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3 5 6v5c0 5 3.5 8.5 7 10 3.5-1.5 7-5 7-10V6l-7-3Z" />
-      <path d="M9 12h6M12 9v6" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={base}
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2.25"
+      aria-hidden="true"
+    >
+      {paths[name]}
     </svg>
   );
 }
 
-function AutoHealthMark() {
+function TopHeader() {
   return (
-    <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#1E6BFF] text-white shadow-[0_10px_24px_-12px_rgba(30,107,255,0.9)]">
-      <svg viewBox="0 0 32 32" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M16 5v22M5 16h22" />
-        <path d="M16 5c4 2 6 5 6 11s-2 9-6 11c-4-2-6-5-6-11s2-9 6-11Z" opacity="0.55" />
-      </svg>
-    </div>
-  );
-}
-
-function LineBadge() {
-  return (
-    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#06C755] text-[10px] font-black text-white ring-4 ring-emerald-50">
-      LINE
-    </div>
-  );
-}
-
-function TopAppHeader() {
-  return (
-    <header className="sticky top-0 z-30 border-b border-slate-100 bg-white/90 px-5 pb-3 pt-4 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[430px] items-center justify-between">
-        <div className="flex items-center gap-3 text-slate-950">
-          <button type="button" aria-label="Back" className="-ml-2 rounded-full p-2">
-            <AppIcon name="back" />
+    <header className="sticky top-0 z-40 h-16 border-b border-[#EEF2F7] bg-white">
+      <div className="mx-auto flex h-full max-w-[390px] items-center justify-between px-4">
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label="Back" className="-ml-2 grid h-9 w-9 place-items-center text-[#0B1B3F]">
+            <Icon name="back" className="h-7 w-7" />
           </button>
-          <LineBadge />
+          <div className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#06C755] text-[9px] font-black text-white shadow-sm ring-2 ring-emerald-50">
+            LINE
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <AutoHealthMark />
-          <span className="text-2xl font-semibold tracking-[-0.04em] text-[#06133A]">AutoHealth</span>
+        <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
+          <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#2563EB] text-white shadow-sm">
+            <Icon name="shield" className="h-5 w-5" />
+          </div>
+          <span className="text-2xl font-bold tracking-[-0.04em] text-[#0B1B3F]">AutoHealth</span>
         </div>
 
-        <div className="flex items-center gap-2 text-slate-950">
-          <button type="button" aria-label="Home" className="rounded-full p-2">
-            <AppIcon name="home" />
+        <div className="flex items-center gap-1 text-[#0B1B3F]">
+          <button type="button" aria-label="Home" className="grid h-9 w-9 place-items-center">
+            <Icon name="home" className="h-7 w-7" />
           </button>
-          <button type="button" aria-label="More" className="-mr-2 rounded-full p-2">
-            <AppIcon name="more" />
+          <button type="button" aria-label="More" className="-mr-2 grid h-9 w-9 place-items-center">
+            <Icon name="more" className="h-7 w-7" />
           </button>
         </div>
       </div>
@@ -215,51 +223,47 @@ function TopAppHeader() {
   );
 }
 
-function PatientPhoto({ src }: { src: string | null }) {
+function PatientAvatar({ src }: { src: string | null }) {
   if (src) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt="คุณพ่อไพโรจน์" className="h-24 w-24 shrink-0 rounded-full object-cover ring-4 ring-white" />
+      <img src={src} alt="คุณพ่อไพโรจน์" className="h-[72px] w-[72px] shrink-0 rounded-full object-cover" />
     );
   }
 
   return (
-    <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-100 to-blue-50 text-3xl font-semibold text-[#1E6BFF] ring-4 ring-white">
+    <div className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-blue-50 text-2xl font-bold text-[#2563EB]">
       พ
     </div>
   );
 }
 
-function PatientProfileCard({
-  avatarUrl,
-  onEditDob,
-}: {
-  avatarUrl: string | null;
-  onEditDob: () => void;
-}) {
+function PatientProfileCard({ avatarUrl, onEditDob }: { avatarUrl: string | null; onEditDob: () => void }) {
   return (
-    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.35)]">
-      <div className="flex items-center gap-5">
-        <PatientPhoto src={avatarUrl} />
+    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-[14px]">
+        <PatientAvatar src={avatarUrl} />
+
         <div className="min-w-0 flex-1">
-          <h1 className="text-3xl font-semibold tracking-[-0.05em] text-[#06133A]">คุณพ่อไพโรจน์</h1>
+          <h1 className="truncate text-2xl font-bold leading-tight text-[#0B1B3F]">คุณพ่อไพโรจน์</h1>
           <button
             type="button"
             onClick={onEditDob}
-            className="mt-2 inline-flex items-center gap-2 text-left text-lg text-slate-500"
+            className="mt-2 flex max-w-full items-center gap-1.5 whitespace-nowrap text-left text-base text-[#64748B]"
           >
-            <span>12 มี.ค. 2493 (73 ปี)</span>
-            <span className="inline-flex items-center gap-1 text-[#1E6BFF]">
-              <AppIcon name="edit" />
-              <span className="text-base">แก้ไข</span>
-            </span>
+            <span className="truncate">12 มี.ค. 2493 (73 ปี)</span>
+            <Icon name="edit" className="h-[18px] w-[18px] text-[#2563EB]" />
+            <span className="hidden text-sm font-medium text-[#2563EB] min-[380px]:inline">แก้ไข</span>
           </button>
-          <p className="mt-1 text-base text-slate-500">รายงานความดัน 30 วันล่าสุด</p>
+          <p className="mt-1 text-sm text-[#64748B]">รายงานความดัน 30 วันล่าสุด</p>
         </div>
-        <div className="flex shrink-0 flex-col items-center justify-center rounded-[22px] bg-amber-50 px-4 py-4 text-amber-700 ring-1 ring-amber-100">
-          <AppIcon name="eye" />
-          <span className="mt-1 text-lg font-medium">เฝ้าระวัง</span>
-          <span className="text-sm">(Watch)</span>
+
+        <div className="grid h-[72px] w-[108px] shrink-0 place-items-center rounded-[18px] border border-[#FDE68A] bg-gradient-to-br from-[#FFF7E6] to-[#FFFDF4] text-center text-[#B45309]">
+          <div>
+            <Icon name="eye" className="mx-auto h-6 w-6 text-[#F59E0B]" />
+            <p className="mt-1 text-base font-semibold leading-5">เฝ้าระวัง</p>
+            <p className="text-sm leading-4">(Watch)</p>
+          </div>
         </div>
       </div>
     </section>
@@ -268,15 +272,13 @@ function PatientProfileCard({
 
 function AlertCard() {
   return (
-    <section className="flex items-center gap-5 rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 to-white px-5 py-5 text-amber-900 shadow-[0_18px_50px_-40px_rgba(245,158,11,0.55)]">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-amber-200 bg-white/70 text-amber-500">
-        <AppIcon name="bell" />
+    <section className="mb-4 flex gap-[14px] rounded-[18px] border border-[#FDE68A] bg-[#FFFBEB] p-4">
+      <div className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-full border border-[#FDE68A] text-[#F59E0B]">
+        <Icon name="bell" className="h-[26px] w-[26px]" />
       </div>
-      <div>
-        <p className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
-          พบค่าความดันบางช่วงสูงกว่าค่ามาตรฐาน
-        </p>
-        <p className="mt-2 text-base leading-7 text-slate-600">
+      <div className="min-w-0">
+        <h2 className="text-lg font-bold leading-[1.35] text-[#0B1B3F]">พบค่าความดันบางช่วงสูงกว่าค่ามาตรฐาน</h2>
+        <p className="mt-1.5 text-sm leading-[1.45] text-[#64748B]">
           แนะนำติดตามค่าอย่างต่อเนื่อง และปรึกษาแพทย์หากมีค่าเพิ่มขึ้นต่อเนื่อง
         </p>
       </div>
@@ -284,187 +286,185 @@ function AlertCard() {
   );
 }
 
-function makeChartPath(points: BloodPressurePoint[], metric: "systolic" | "diastolic") {
-  const width = 680;
-  const height = 330;
-  const xStart = 48;
-  const xEnd = width - 56;
-  const yTop = 42;
-  const yBottom = height - 56;
-  const min = 100;
+function makePath(points: BloodPressurePoint[], metric: "systolic" | "diastolic") {
+  const width = 340;
+  const height = 240;
+  const left = 34;
+  const right = 48;
+  const top = 24;
+  const bottom = 30;
+  const min = 90;
   const max = 180;
-  const step = (xEnd - xStart) / (points.length - 1);
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
 
   const coords = points.map((point, index) => {
     const value = point[metric];
-    const normalized = (Math.max(min, Math.min(max, value)) - min) / (max - min);
-    return {
-      x: xStart + index * step,
-      y: yBottom - normalized * (yBottom - yTop),
-      value,
-      point,
-    };
+    const x = left + (plotWidth / (points.length - 1)) * index;
+    const y = top + ((max - value) / (max - min)) * plotHeight;
+    return { x, y, value, day: point.day };
   });
 
   return {
     width,
     height,
     coords,
-    path: coords.map((coord, index) => `${index === 0 ? "M" : "L"} ${coord.x} ${coord.y}`).join(" "),
+    path: coords.map((coord, index) => `${index === 0 ? "M" : "L"}${coord.x.toFixed(1)},${coord.y.toFixed(1)}`).join(" "),
   };
 }
 
 function BloodPressureChart() {
-  const systolic = makeChartPath(BLOOD_PRESSURE_POINTS, "systolic");
-  const diastolic = makeChartPath(BLOOD_PRESSURE_POINTS, "diastolic");
-  const tooltipPoint = BLOOD_PRESSURE_POINTS[15];
+  const systolic = makePath(BP_POINTS, "systolic");
+  const diastolic = makePath(BP_POINTS, "diastolic");
+  const tooltipPoint = BP_POINTS[15];
   const tooltipCoord = systolic.coords[15];
 
   return (
-    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.28)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">
-            แนวโน้มความดันโลหิต <span className="text-base font-normal text-slate-500">(Blood Pressure Trend)</span>
-          </h2>
-          <div className="mt-4 flex flex-wrap gap-5 text-sm text-slate-500">
-            <span className="inline-flex items-center gap-2">
-              <span className="h-2 w-10 rounded-full bg-[#1E6BFF]" />
-              ความดันตัวบน (Systolic)
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="h-2 w-10 rounded-full bg-[#77BDFE]" />
-              ความดันตัวล่าง (Diastolic)
-            </span>
-          </div>
+    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold leading-tight text-[#0B1B3F]">แนวโน้มความดันโลหิต</h2>
+          <p className="text-sm text-[#64748B]">(Blood Pressure Trend)</p>
         </div>
-        <p className="shrink-0 text-base text-slate-500">หน่วย: mmHg</p>
+        <p className="shrink-0 text-sm text-[#64748B]">หน่วย: mmHg</p>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-[20px]">
-        <svg viewBox={`0 0 ${systolic.width} ${systolic.height}`} className="h-[310px] w-full" role="img" aria-label="Blood pressure trend for 30 days">
-          <defs>
-            <linearGradient id="riskNormal" x1="0" x2="1">
-              <stop offset="0%" stopColor="#E8F8EA" />
-              <stop offset="100%" stopColor="#F7FDF8" />
-            </linearGradient>
-            <linearGradient id="riskWatch" x1="0" x2="1">
-              <stop offset="0%" stopColor="#FFF8D8" />
-              <stop offset="100%" stopColor="#FFFDF0" />
-            </linearGradient>
-            <linearGradient id="riskHigh" x1="0" x2="1">
-              <stop offset="0%" stopColor="#FFF0DD" />
-              <stop offset="100%" stopColor="#FFF8EF" />
-            </linearGradient>
-            <linearGradient id="riskConsult" x1="0" x2="1">
-              <stop offset="0%" stopColor="#FFE6EA" />
-              <stop offset="100%" stopColor="#FFF4F5" />
-            </linearGradient>
-          </defs>
+      <div className="mt-3 flex flex-wrap gap-4 text-[13px] text-[#64748B]">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2 w-9 rounded-full bg-[#2563EB]" />
+          ความดันตัวบน (Systolic)
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2 w-9 rounded-full bg-[#60A5FA]" />
+          ความดันตัวล่าง (Diastolic)
+        </span>
+      </div>
 
-          <rect x="48" y="42" width="576" height="70" fill="url(#riskConsult)" rx="8" />
-          <rect x="48" y="112" width="576" height="58" fill="url(#riskHigh)" />
-          <rect x="48" y="170" width="576" height="58" fill="url(#riskWatch)" />
-          <rect x="48" y="228" width="576" height="46" fill="url(#riskNormal)" />
+      <svg
+        viewBox={`0 0 ${systolic.width} ${systolic.height}`}
+        className="mt-2 h-[240px] w-full overflow-visible"
+        role="img"
+        aria-label="Blood pressure trend chart"
+      >
+        <defs>
+          <linearGradient id="zoneConsult" x1="0" x2="1">
+            <stop offset="0%" stopColor="#FEE2E2" />
+            <stop offset="100%" stopColor="#FFF1F2" />
+          </linearGradient>
+          <linearGradient id="zoneHigh" x1="0" x2="1">
+            <stop offset="0%" stopColor="#FFEDD5" />
+            <stop offset="100%" stopColor="#FFF7ED" />
+          </linearGradient>
+          <linearGradient id="zoneWatch" x1="0" x2="1">
+            <stop offset="0%" stopColor="#FEF3C7" />
+            <stop offset="100%" stopColor="#FFFBEB" />
+          </linearGradient>
+          <linearGradient id="zoneNormal" x1="0" x2="1">
+            <stop offset="0%" stopColor="#DCFCE7" />
+            <stop offset="100%" stopColor="#F0FDF4" />
+          </linearGradient>
+        </defs>
 
-          {[180, 160, 140, 120].map((value, index) => (
+        <rect x="34" y="24" width="258" height="47" fill="url(#zoneConsult)" rx="8" />
+        <rect x="34" y="71" width="258" height="47" fill="url(#zoneHigh)" />
+        <rect x="34" y="118" width="258" height="47" fill="url(#zoneWatch)" />
+        <rect x="34" y="165" width="258" height="45" fill="url(#zoneNormal)" />
+
+        {[180, 160, 140, 120].map((value, index) => {
+          const y = 28 + index * 47;
+          return (
             <g key={value}>
-              <text x="8" y={50 + index * 58} className="fill-slate-500 text-[13px]">
+              <text x="0" y={y + 4} className="fill-[#64748B] text-[12px]">
                 {value}
               </text>
-              <line x1="48" x2="624" y1={48 + index * 58} y2={48 + index * 58} stroke="#CBD5E1" strokeOpacity="0.45" />
+              <line x1="34" x2="292" y1={y} y2={y} stroke="#E5E7EB" strokeDasharray="5 7" />
             </g>
-          ))}
+          );
+        })}
 
-          <text x="616" y="72" textAnchor="end" className="fill-red-500 text-[14px] font-medium">
-            ควรปรึกษาแพทย์
-          </text>
-          <text x="616" y="92" textAnchor="end" className="fill-red-500 text-[14px]">
-            (Consult)
-          </text>
-          <text x="616" y="146" textAnchor="end" className="fill-orange-500 text-[14px] font-medium">
-            สูง
-          </text>
-          <text x="616" y="166" textAnchor="end" className="fill-orange-500 text-[14px]">
-            (High)
-          </text>
-          <text x="616" y="206" textAnchor="end" className="fill-amber-500 text-[14px] font-medium">
-            เฝ้าระวัง
-          </text>
-          <text x="616" y="226" textAnchor="end" className="fill-amber-500 text-[14px]">
-            (Watch)
-          </text>
-          <text x="616" y="260" textAnchor="end" className="fill-emerald-600 text-[14px] font-medium">
-            ปกติ
-          </text>
-          <text x="616" y="280" textAnchor="end" className="fill-emerald-600 text-[14px]">
-            (Normal)
-          </text>
+        <text x="286" y="49" textAnchor="end" className="fill-[#EF4444] text-[10px] font-semibold">
+          ควรปรึกษาแพทย์
+        </text>
+        <text x="286" y="62" textAnchor="end" className="fill-[#EF4444] text-[10px]">
+          (Consult)
+        </text>
+        <text x="286" y="102" textAnchor="end" className="fill-[#F97316] text-[11px] font-semibold">
+          สูง (High)
+        </text>
+        <text x="286" y="149" textAnchor="end" className="fill-[#F59E0B] text-[11px] font-semibold">
+          เฝ้าระวัง (Watch)
+        </text>
+        <text x="286" y="197" textAnchor="end" className="fill-[#22C55E] text-[11px] font-semibold">
+          ปกติ (Normal)
+        </text>
 
-          <path d={systolic.path} fill="none" stroke="#1E6BFF" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={diastolic.path} fill="none" stroke="#77BDFE" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={systolic.path} fill="none" stroke="#2563EB" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+        <path d={diastolic.path} fill="none" stroke="#60A5FA" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
 
-          {systolic.coords.map((coord) => (
-            <circle key={`sys-${coord.point.day}`} cx={coord.x} cy={coord.y} r="4.2" fill="#1E6BFF" stroke="white" strokeWidth="2" />
-          ))}
-          {diastolic.coords.map((coord) => (
-            <circle key={`dia-${coord.point.day}`} cx={coord.x} cy={coord.y} r="4.2" fill="#77BDFE" stroke="white" strokeWidth="2" />
-          ))}
+        {systolic.coords.map((coord) => (
+          <circle key={`sys-${coord.day}`} cx={coord.x} cy={coord.y} r="4" fill="#2563EB" stroke="white" strokeWidth="1.5" />
+        ))}
+        {diastolic.coords.map((coord) => (
+          <circle key={`dia-${coord.day}`} cx={coord.x} cy={coord.y} r="4" fill="#60A5FA" stroke="white" strokeWidth="1.5" />
+        ))}
 
-          <line x1={tooltipCoord.x} x2={tooltipCoord.x} y1="42" y2="274" stroke="#94A3B8" strokeDasharray="4 5" opacity="0.6" />
-          <g transform={`translate(${tooltipCoord.x - 52} 72)`}>
-            <rect width="112" height="92" rx="10" fill="white" filter="drop-shadow(0 8px 14px rgba(15,23,42,0.18))" />
-            <text x="16" y="26" className="fill-slate-900 text-[14px] font-semibold">Day {tooltipPoint.day}</text>
-            <circle cx="18" cy="52" r="5" fill="#1E6BFF" />
-            <text x="32" y="56" className="fill-slate-700 text-[13px]">ตัวบน {tooltipPoint.systolic}</text>
-            <circle cx="18" cy="74" r="5" fill="#77BDFE" />
-            <text x="32" y="78" className="fill-slate-700 text-[13px]">ตัวล่าง {tooltipPoint.diastolic}</text>
-          </g>
+        <line x1={tooltipCoord.x} x2={tooltipCoord.x} y1="24" y2="210" stroke="#94A3B8" strokeDasharray="4 5" opacity="0.6" />
+        <g transform={`translate(${Math.max(44, tooltipCoord.x - 37)} 42)`}>
+          <rect width="84" height="68" rx="10" fill="white" filter="drop-shadow(0 8px 12px rgba(15,23,42,0.16))" />
+          <text x="12" y="20" className="fill-[#0B1B3F] text-[12px] font-bold">
+            Day {tooltipPoint.day}
+          </text>
+          <circle cx="14" cy="38" r="4" fill="#2563EB" />
+          <text x="25" y="42" className="fill-[#0B1B3F] text-[11px]">
+            ตัวบน {tooltipPoint.systolic}
+          </text>
+          <circle cx="14" cy="56" r="4" fill="#60A5FA" />
+          <text x="25" y="60" className="fill-[#0B1B3F] text-[11px]">
+            ตัวล่าง {tooltipPoint.diastolic}
+          </text>
+        </g>
 
-          {[
-            { label: "1 พ.ค.", x: 58 },
-            { label: "8 พ.ค.", x: 194 },
-            { label: "15 พ.ค.", x: 346 },
-            { label: "22 พ.ค.", x: 494 },
-            { label: "29 พ.ค.", x: 612 },
-          ].map((item) => (
-            <text key={item.label} x={item.x} y="318" textAnchor="middle" className="fill-slate-500 text-[13px]">
-              {item.label}
-            </text>
-          ))}
-        </svg>
-      </div>
+        {[
+          { x: 38, label: "1 พ.ค." },
+          { x: 98, label: "8 พ.ค." },
+          { x: 162, label: "15 พ.ค." },
+          { x: 226, label: "22 พ.ค." },
+          { x: 288, label: "29 พ.ค." },
+        ].map((tick) => (
+          <text key={tick.label} x={tick.x} y="235" textAnchor="middle" className="fill-[#64748B] text-[11px]">
+            {tick.label}
+          </text>
+        ))}
+      </svg>
     </section>
   );
 }
 
 function AverageCards() {
+  const cards = [
+    { label: "ความดันตัวบน", english: "Systolic", value: "132", tone: "bg-[#2563EB]", bg: "from-[#EFF6FF] to-white" },
+    { label: "ความดันตัวล่าง", english: "Diastolic", value: "86", tone: "bg-[#60A5FA]", bg: "from-[#EFF6FF] to-white" },
+  ];
+
   return (
-    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.28)]">
-      <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">ค่าเฉลี่ย 30 วัน</h2>
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div className="flex items-center gap-4 rounded-[20px] bg-gradient-to-br from-blue-50 to-white p-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#1E6BFF] text-white">
-            <AutoHealthMark />
+    <section className="mb-3 rounded-[20px] border border-[#E5E7EB] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <h2 className="mb-3 text-xl font-bold text-[#0B1B3F]">ค่าเฉลี่ย 30 วัน</h2>
+      <div className="flex gap-3">
+        {cards.map((card) => (
+          <div key={card.english} className={`flex h-[94px] min-w-0 flex-1 items-center gap-2 rounded-2xl bg-gradient-to-br ${card.bg} p-3`}>
+            <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${card.tone} text-white`}>
+              <Icon name="heart" className="h-6 w-6" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] leading-tight text-[#64748B]">
+                {card.label} <span className="text-[#2563EB]">({card.english})</span>
+              </p>
+              <p className="mt-1 whitespace-nowrap text-[32px] font-extrabold leading-none tracking-[-0.05em] text-[#0B1B3F]">
+                {card.value} <span className="text-[13px] font-normal tracking-normal text-[#64748B]">mmHg</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-slate-600">ความดันตัวบน <span className="text-[#1E6BFF]">(Systolic)</span></p>
-            <p className="mt-1 text-4xl font-semibold tracking-[-0.06em] text-[#06133A]">
-              132 <span className="text-lg font-normal text-slate-500">mmHg</span>
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 rounded-[20px] bg-gradient-to-br from-sky-50 to-white p-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#77BDFE] text-2xl font-bold text-white">
-            +
-          </div>
-          <div>
-            <p className="text-sm text-slate-600">ความดันตัวล่าง <span className="text-sky-500">(Diastolic)</span></p>
-            <p className="mt-1 text-4xl font-semibold tracking-[-0.06em] text-[#06133A]">
-              86 <span className="text-lg font-normal text-slate-500">mmHg</span>
-            </p>
-          </div>
-        </div>
+        ))}
       </div>
     </section>
   );
@@ -472,17 +472,14 @@ function AverageCards() {
 
 function TrendSummaryCard() {
   return (
-    <section className="flex items-center gap-5 rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-blue-500 text-white">
-        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m4 16 5-5 4 4 7-8" />
-          <path d="M15 7h5v5" />
-        </svg>
+    <section className="mb-3 flex items-center gap-[14px] rounded-[20px] border border-[#E5E7EB] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#7C4DFF] to-[#2563EB] text-white">
+        <Icon name="trend" className="h-7 w-7" />
       </div>
-      <div>
-        <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">แนวโน้ม</h2>
-        <p className="mt-2 text-xl font-semibold text-[#06133A]">ความดันมีแนวโน้มสูงในบางช่วงของวัน</p>
-        <p className="mt-1 text-base text-slate-500">ควรวัดค่าในเวลาเดิมอย่างสม่ำเสมอ</p>
+      <div className="min-w-0">
+        <h2 className="text-xl font-bold text-[#0B1B3F]">แนวโน้ม</h2>
+        <p className="mt-1 text-lg font-bold leading-[1.35] text-[#0B1B3F]">ความดันมีแนวโน้มสูงในบางช่วงของวัน</p>
+        <p className="mt-1 text-sm text-[#64748B]">ควรวัดค่าในเวลาเดิมอย่างสม่ำเสมอ</p>
       </div>
     </section>
   );
@@ -490,21 +487,21 @@ function TrendSummaryCard() {
 
 function Overview30Days() {
   return (
-    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
-      <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">ภาพรวม 30 วัน</h2>
-      <div className="mt-4 grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(15, minmax(0, 1fr))" }}>
-        {BLOOD_PRESSURE_POINTS.map((point) => (
-          <div key={point.day} className="flex flex-col items-center gap-1.5">
-            <span className={`h-6 w-6 rounded-md ${STATUS_STYLE[point.status].bg} shadow-sm`} />
-            <span className="text-xs text-slate-500">{point.day}</span>
+    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <h2 className="mb-3.5 text-xl font-bold text-[#0B1B3F]">ภาพรวม 30 วัน</h2>
+      <div className="grid grid-cols-[repeat(15,18px)] justify-between gap-y-3">
+        {BP_POINTS.map((point) => (
+          <div key={point.day} className="flex w-[18px] flex-col items-center gap-1.5">
+            <span className={`h-[18px] w-[18px] rounded-[5px] ${STATUS_META[point.status].className}`} />
+            <span className="text-xs leading-none text-[#64748B]">{point.day}</span>
           </div>
         ))}
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-3 rounded-[18px] border border-slate-100 bg-white px-4 py-4 sm:grid-cols-4">
-        {(Object.keys(STATUS_STYLE) as BpStatus[]).map((status) => (
+      <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-[#E5E7EB] p-3">
+        {(Object.keys(STATUS_META) as BpStatus[]).map((status) => (
           <div key={status} className="flex items-center gap-2">
-            <span className={`h-5 w-5 rounded-md ${STATUS_STYLE[status].bg}`} />
-            <span className={`text-sm ${STATUS_STYLE[status].color}`}>{STATUS_STYLE[status].label}</span>
+            <span className={`h-[18px] w-[18px] rounded-[5px] ${STATUS_META[status].className}`} />
+            <span className="text-sm leading-tight text-[#64748B]">{STATUS_META[status].label}</span>
           </div>
         ))}
       </div>
@@ -516,117 +513,121 @@ function ReferenceCriteriaCard() {
   const rows = [
     {
       icon: "doc" as const,
-      text: "อ้างอิงเกณฑ์แนวทางเวชปฏิบัติสำหรับกระทรวงสาธารณสุข",
+      text: "อ้างอิงเกณฑ์แนวทางเวชปฏิบัติทั่วไป / กระทรวงสาธารณสุข",
     },
     {
       icon: "shield" as const,
-      text: "ข้อมูลที่ใช้เพื่อการติดตามสุขภาพเท่านั้น ไม่ใช่การวินิจฉัยจากการแพทย์",
+      text: "ข้อมูลนี้ใช้เพื่อการติดตามสุขภาพเท่านั้น ไม่ใช่การวินิจฉัยทางการแพทย์",
     },
   ];
 
   return (
-    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.22)]">
-      <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">อ้างอิงเกณฑ์</h2>
-      <div className="mt-3 divide-y divide-slate-100">
-        {rows.map((row) => (
-          <button key={row.text} type="button" className="flex w-full items-center gap-4 py-4 text-left">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-              <AppIcon name={row.icon} />
-            </span>
-            <span className="flex-1 text-base leading-6 text-slate-600">{row.text}</span>
-            <span className="text-2xl text-slate-400">›</span>
-          </button>
-        ))}
-      </div>
+    <section className="mb-4 overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      {rows.map((row, index) => (
+        <button
+          key={row.text}
+          type="button"
+          className={`flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left ${index > 0 ? "border-t border-[#E5E7EB]" : ""}`}
+        >
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-[#F1F5F9] text-[#64748B]">
+            <Icon name={row.icon} className="h-5 w-5" />
+          </span>
+          <span className="flex-1 text-sm leading-[1.35] text-[#64748B]">{row.text}</span>
+          <Icon name="chevron" className="h-5 w-5 text-[#94A3B8]" />
+        </button>
+      ))}
     </section>
   );
 }
 
 function BottomNavigation() {
   const tabs = [
-    { label: "หน้าหลัก", icon: "⌂", active: true },
-    { label: "รายงาน", icon: "▤", active: false },
-    { label: "บันทึก", icon: "+", active: false },
-    { label: "แจ้งเตือน", icon: "♢", active: false },
-    { label: "ฉัน", icon: "○", active: false },
+    { label: "หน้าหลัก", icon: "home" as const, active: true },
+    { label: "รายงาน", icon: "report" as const, active: false },
+    { label: "บันทึก", icon: "plus" as const, active: false, center: true },
+    { label: "แจ้งเตือน", icon: "bell" as const, active: false, badge: 2 },
+    { label: "ฉัน", icon: "user" as const, active: false },
   ];
 
   return (
-    <nav className="sticky bottom-0 z-30 border-t border-slate-100 bg-white/95 px-4 pb-4 pt-2 backdrop-blur-xl">
-      <div className="mx-auto grid max-w-[430px] grid-cols-5 items-end gap-2">
+    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[390px] border-t border-[#E5E7EB] bg-white px-3 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.04)]">
+      <div className="grid h-[72px] grid-cols-5 items-end pb-[env(safe-area-inset-bottom)]">
         {tabs.map((tab) => (
           <button
             key={tab.label}
             type="button"
-            className={`flex flex-col items-center gap-1 text-xs ${tab.active ? "text-[#1E6BFF]" : "text-slate-500"}`}
+            className={`relative flex flex-col items-center justify-end gap-1 pb-2 text-xs ${
+              tab.active ? "text-[#2563EB]" : "text-[#94A3B8]"
+            }`}
           >
             <span
-              className={`flex items-center justify-center ${
-                tab.label === "บันทึก"
-                  ? "h-14 w-14 -translate-y-3 rounded-full bg-[#1E6BFF] text-3xl text-white shadow-[0_16px_30px_-16px_rgba(30,107,255,0.9)]"
-                  : "h-8 w-8 text-2xl"
-              }`}
+              className={
+                tab.center
+                  ? "mb-0 grid h-14 w-14 -translate-y-3 place-items-center rounded-full bg-[#2563EB] text-white shadow-[0_14px_28px_rgba(37,99,235,0.28)]"
+                  : "relative grid h-7 w-7 place-items-center"
+              }
             >
-              {tab.icon}
+              <Icon name={tab.icon} className={tab.center ? "h-8 w-8" : "h-6 w-6"} />
+              {tab.badge ? (
+                <span className="absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-[#EF4444] px-1 text-[11px] font-bold leading-none text-white">
+                  {tab.badge}
+                </span>
+              ) : null}
             </span>
-            <span className={tab.label === "บันทึก" ? "-mt-3" : ""}>{tab.label}</span>
+            <span className={tab.center ? "-mt-3" : ""}>{tab.label}</span>
           </button>
         ))}
       </div>
-      <div className="mx-auto mt-3 h-1 w-32 rounded-full bg-slate-950" />
     </nav>
   );
 }
 
-function EditDOBBottomSheet({
-  open,
-  onClose,
-  onSave,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSave: () => void;
-}) {
+function EditDOBBottomSheet({ open, onClose, onSave }: { open: boolean; onClose: () => void; onSave: () => void }) {
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/20">
-      <section className="w-full max-w-[430px] rounded-t-[34px] bg-white px-6 pb-8 pt-4 shadow-[0_-24px_60px_-30px_rgba(15,23,42,0.55)]">
-        <div className="mx-auto h-1.5 w-16 rounded-full bg-slate-300" />
-        <h2 className="mt-8 text-center text-3xl font-semibold tracking-[-0.05em] text-[#06133A]">
-          แก้ไขวันเดือนปีเกิด
-        </h2>
-        <label className="mt-8 block text-base font-medium text-slate-900">
-          วันเดือนปีเกิด
+    <div className="fixed inset-0 z-50 flex justify-center bg-slate-950/25">
+      <section className="fixed bottom-0 w-full max-w-[390px] rounded-t-[28px] bg-white p-5 pb-[calc(20px+env(safe-area-inset-bottom))] shadow-[0_-24px_60px_rgba(15,23,42,0.22)]">
+        <div className="mx-auto h-[5px] w-11 rounded-full bg-[#CBD5E1]" />
+        <h2 className="mb-5 mt-5 text-center text-[22px] font-bold text-[#0B1B3F]">แก้ไขวันเดือนปีเกิด</h2>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-medium text-[#0B1B3F]">วันเดือนปีเกิด</span>
           <button
             type="button"
-            className="mt-3 flex w-full items-center justify-between rounded-[18px] border border-slate-300 bg-white px-4 py-4 text-left text-2xl text-slate-800"
+            className="flex h-[52px] w-full items-center justify-between rounded-xl border border-[#CBD5E1] bg-white px-3.5 text-left text-base text-[#0B1B3F]"
           >
-            <span className="inline-flex items-center gap-3">
-              <span className="text-slate-500">▣</span>
+            <span className="flex items-center gap-3">
+              <Icon name="calendar" className="h-5 w-5 text-[#64748B]" />
               12 มี.ค. 2493
             </span>
-            <span className="text-slate-500">⌄</span>
+            <span className="text-xl leading-none text-[#64748B]">⌄</span>
           </button>
         </label>
-        <p className="mt-3 text-sm text-slate-500">รูปแบบ: วว/ดด/ปปปป (พ.ศ.)</p>
-        <div className="mt-5 rounded-[18px] bg-blue-50 px-4 py-4 text-base leading-7 text-slate-600">
-          เมื่อบันทึกแล้ว อายุจะถูกคำนวณใหม่อัตโนมัติ และข้อมูลที่เกี่ยวข้องจะถูกอัปเดต
+
+        <p className="mt-2 text-[13px] text-[#64748B]">รูปแบบ: วว/ดด/ปปปป (พ.ศ.)</p>
+
+        <div className="mt-4 flex gap-3 rounded-[14px] bg-[#F1F5F9] p-3.5">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#64748B] text-xs font-bold text-white">i</span>
+          <p className="text-sm leading-[1.45] text-[#64748B]">
+            เมื่อบันทึกแล้ว อายุจะถูกคำนวณใหม่อัตโนมัติ และข้อมูลที่เกี่ยวข้องจะถูกอัปเดต
+          </p>
         </div>
-        <div className="mt-8 grid grid-cols-2 gap-4">
+
+        <div className="mt-5 flex gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-[18px] border border-slate-300 bg-white px-5 py-4 text-xl font-semibold text-slate-950"
+            className="h-[52px] flex-1 rounded-[14px] border border-[#CBD5E1] bg-white text-base font-semibold text-[#0B1B3F]"
           >
             ยกเลิก
           </button>
           <button
             type="button"
             onClick={onSave}
-            className="rounded-[18px] bg-[#1E6BFF] px-5 py-4 text-xl font-semibold text-white shadow-[0_16px_28px_-18px_rgba(30,107,255,0.95)]"
+            className="h-[52px] flex-1 rounded-[14px] bg-[#2563EB] text-base font-bold text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)]"
           >
             บันทึก
           </button>
@@ -642,9 +643,9 @@ function SaveToast({ show }: { show: boolean }) {
   }
 
   return (
-    <div className="fixed bottom-24 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-[18px] bg-slate-900/92 px-6 py-4 text-lg font-medium text-white shadow-2xl">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500">✓</span>
-      บันทึกเรียบร้อย
+    <div className="fixed bottom-24 left-1/2 z-[60] flex h-[52px] w-[260px] -translate-x-1/2 items-center justify-center gap-3 rounded-[14px] bg-[#1F2937] text-white shadow-2xl">
+      <span className="grid h-7 w-7 place-items-center rounded-full bg-[#22C55E] font-bold">✓</span>
+      <span className="font-medium">บันทึกเรียบร้อย</span>
     </div>
   );
 }
@@ -664,26 +665,28 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
   }
 
   return (
-    <main className="min-h-screen bg-[#F7F9FC] text-[#06133A]">
-      <TopAppHeader />
+    <main className="min-h-screen overflow-x-hidden bg-[#F8FAFC] font-sans text-[#0B1B3F]">
+      <div className="mx-auto min-h-screen max-w-[390px] overflow-x-hidden bg-[#F8FAFC]">
+        <TopHeader />
 
-      <div className="mx-auto max-w-[430px] space-y-4 px-4 pb-6 pt-4">
-        <p className="rounded-full bg-white px-4 py-2 text-sm text-slate-500 shadow-sm ring-1 ring-slate-100">
-          กลุ่ม LINE: {groupName}
-        </p>
+        <div className="px-3 pb-[calc(104px+env(safe-area-inset-bottom))] pt-3">
+          <p className="mb-3 truncate rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-sm text-[#64748B] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            กลุ่ม LINE: {groupName}
+          </p>
 
-        <PatientProfileCard avatarUrl={avatarUrl} onEditDob={() => setIsEditOpen(true)} />
-        <AlertCard />
-        <BloodPressureChart />
-        <AverageCards />
-        <TrendSummaryCard />
-        <Overview30Days />
-        <ReferenceCriteriaCard />
+          <PatientProfileCard avatarUrl={avatarUrl} onEditDob={() => setIsEditOpen(true)} />
+          <AlertCard />
+          <BloodPressureChart />
+          <AverageCards />
+          <TrendSummaryCard />
+          <Overview30Days />
+          <ReferenceCriteriaCard />
+        </div>
+
+        <BottomNavigation />
+        <EditDOBBottomSheet open={isEditOpen} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} />
+        <SaveToast show={showToast} />
       </div>
-
-      <BottomNavigation />
-      <EditDOBBottomSheet open={isEditOpen} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} />
-      <SaveToast show={showToast} />
     </main>
   );
 }
