@@ -12,6 +12,9 @@ SET
   "parsed" = COALESCE("parsed", '{}'::jsonb)
 WHERE "contexts" IS NULL OR "parsed" IS NULL;
 
+ALTER TABLE "Message"
+  ALTER COLUMN "contexts" SET DEFAULT ARRAY[]::text[];
+
 DO $$
 BEGIN
   IF NOT EXISTS (

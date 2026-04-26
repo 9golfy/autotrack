@@ -22,15 +22,15 @@ const SUPPORTED_CONTEXTS = new Set([
 
 const FLEX_TEMPLATE_BY_CONTEXT: Record<string, string> = {
   health_report: "health_report_summary",
-  vital_signs: "health_report_summary",
-  medication: "medication_reminder",
-  meal: "meal_summary",
-  mood_behavior: "mood_behavior_summary",
-  excretion: "excretion_summary",
+  vital_signs: "vital_signs_card",
+  medication: "medication_card",
+  meal: "meal_card",
+  mood_behavior: "mood_behavior_card",
+  excretion: "excretion_card",
   billing: "billing_notice",
-  activity: "activity_summary",
-  general_chat: "simple_text",
-  other: "simple_text",
+  activity: "activity_card",
+  general_chat: "plain_text",
+  other: "plain_text",
 };
 
 type SourceRecord = {

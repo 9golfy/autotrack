@@ -4,6 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { buildHealthReport, extractTimedVitalsSamples, type TimedVitalsSample } from "@/lib/health-report";
+import {
+  detectSupabaseMessageContexts,
+  getFlexTemplateForSupabaseContext,
+  type LineFlexMessage,
+  type SupabaseFlexTemplate,
+  type SupabaseMessageContext,
+} from "@/lib/line/flex";
 
 export const runtime = "nodejs";
 
@@ -48,10 +55,25 @@ type ResolvedLineIdentity = {
   error: string | null;
 };
 
-type LineFlexMessage = {
-  type: "flex";
-  altText: string;
-  contents: Record<string, unknown>;
+type StructuredWebhookFields = {
+  context: SupabaseMessageContext;
+  contexts: SupabaseMessageContext[];
+  parsed: {
+    report_date: string | null;
+    shift: string | null;
+    vital_signs: Array<{
+      measured_date: string | null;
+      measured_time: string;
+      blood_pressure_systolic: number | null;
+      blood_pressure_diastolic: number | null;
+      heart_rate_bpm: number | null;
+      respiratory_rate_per_min: number | null;
+      temperature_c: number | null;
+      spo2_percent: number | null;
+    }>;
+  };
+  flexTemplate: SupabaseFlexTemplate;
+  confidence: number;
 };
 
 function verifySignature(body: string, signature: string | null) {
@@ -89,6 +111,171 @@ function getMiniAppReportUrl(origin: string, event: LineWebhookEvent) {
   }
 
   return reportUrl.toString();
+}
+
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+
+  return nextDate;
+}
+
+function parseThaiReportDate(text: string) {
+  const normalizedMatch = text.match(
+    /\u0e1b\u0e23\u0e30\u0e08\u0e33\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})/,
+  );
+  const match = text.match(/ประจำวันที่\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})/);
+
+  if (!normalizedMatch && !match) {
+    return null;
+  }
+
+  const dateMatch = normalizedMatch ?? match;
+  if (!dateMatch) {
+    return null;
+  }
+
+  const day = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const rawYear = Number(dateMatch[3]);
+  const buddhistYear = rawYear < 100 ? 2500 + rawYear : rawYear;
+  const christianYear = buddhistYear > 2400 ? buddhistYear - 543 : buddhistYear;
+
+  if (!day || !month || !christianYear) {
+    return null;
+  }
+
+  return new Date(christianYear, month - 1, day);
+}
+
+function detectShift(text: string) {
+  if (/\u0e40\u0e27\u0e23\u0e14\u0e36\u0e01|20[:. ]?00|20\.00|20:00/.test(text)) {
+    return "night_shift";
+  }
+
+  if (/\u0e40\u0e27\u0e23\u0e40\u0e0a\u0e49\u0e32|08[:. ]?00|08\.00|08:00/.test(text)) {
+    return "day_shift";
+  }
+
+  if (/เวรดึก|20[:. ]?00|20\.00|20:00/.test(text)) {
+    return "night_shift";
+  }
+
+  if (/เวรเช้า|08[:. ]?00|08\.00|08:00/.test(text)) {
+    return "day_shift";
+  }
+
+  return null;
+}
+
+function inferMeasuredDate(reportDate: Date | null, shift: string | null, sample: TimedVitalsSample) {
+  if (!reportDate) {
+    return null;
+  }
+
+  if (shift === "night_shift" && sample.hour < 8) {
+    return toIsoDate(addDays(reportDate, 1));
+  }
+
+  return toIsoDate(reportDate);
+}
+
+function buildStructuredWebhookFields(event: LineWebhookEvent): StructuredWebhookFields | null {
+  const text = event.message?.type === "text" ? event.message.text ?? "" : "";
+
+  if (!text.trim()) {
+    return null;
+  }
+
+  const samples = extractTimedVitalsSamples([
+    {
+      id: event.message?.id ?? event.webhookEventId ?? randomUUID(),
+      text,
+      type: event.message?.type ?? "text",
+      timestamp: event.timestamp ?? Date.now(),
+      userId: event.source?.userId ?? null,
+      groupId: event.source?.groupId ?? event.source?.roomId ?? null,
+    },
+  ]);
+
+  const contexts = new Set<string>(
+    detectSupabaseMessageContexts({
+      text,
+      hasTimedVitals: samples.length > 0,
+    }),
+  );
+
+  if (samples.length > 0) {
+    contexts.add("health_report");
+    contexts.add("vital_signs");
+  }
+
+  if (/ยา|ก่อนนอน|หลังอาหาร|ก่อนอาหาร/.test(text)) {
+    contexts.add("medication");
+  }
+
+  if (/อาหาร|มื้อเช้า|มื้อกลางวัน|มื้อเย็น|ทานข้าว|รับประทาน/.test(text)) {
+    contexts.add("meal");
+  }
+
+  if (/อารมณ์|หงุดหงิด|ยิ้มแย้ม|ซึม|รู้สึกตัว/.test(text)) {
+    contexts.add("mood_behavior");
+  }
+
+  if (/ปัสสาวะ|ขับถ่าย/.test(text)) {
+    contexts.add("excretion");
+  }
+
+  if (contexts.size === 0) {
+    contexts.add("general_chat");
+  }
+
+  const contextOrder = [
+    "health_report",
+    "vital_signs",
+    "medication",
+    "meal",
+    "mood_behavior",
+    "excretion",
+    "billing",
+    "activity",
+    "general_chat",
+    "other",
+  ];
+  const orderedContexts = contextOrder.filter((context) => contexts.has(context));
+  const context = orderedContexts[0] ?? "other";
+  const flexTemplate = getFlexTemplateForSupabaseContext(context as SupabaseMessageContext);
+  const reportDate = parseThaiReportDate(text);
+  const shift = detectShift(text);
+
+  return {
+    context: context as SupabaseMessageContext,
+    contexts: orderedContexts as SupabaseMessageContext[],
+    parsed: {
+      report_date: reportDate ? toIsoDate(reportDate) : null,
+      shift,
+      vital_signs: samples.map((sample) => ({
+        measured_date: inferMeasuredDate(reportDate, shift, sample),
+        measured_time: sample.label,
+        blood_pressure_systolic: sample.systolic,
+        blood_pressure_diastolic: sample.diastolic,
+        heart_rate_bpm: sample.heartRate,
+        respiratory_rate_per_min: sample.respiratoryRate,
+        temperature_c: sample.temperature,
+        spo2_percent: sample.spo2,
+      })),
+    },
+    flexTemplate,
+    confidence: samples.length > 0 ? 0.92 : 0.65,
+  };
 }
 
 function getFileExtension(contentType: string) {
@@ -751,6 +938,26 @@ export async function POST(request: NextRequest) {
         }),
         skipDuplicates: false,
       });
+
+      for (const event of messageEvents) {
+        const messageId = event.message?.id ?? event.webhookEventId;
+        const structuredFields = buildStructuredWebhookFields(event);
+
+        if (!messageId || !structuredFields) {
+          continue;
+        }
+
+        await prisma.$executeRaw`
+          UPDATE "Message"
+          SET
+            "context" = ${structuredFields.context},
+            "contexts" = ${structuredFields.contexts},
+            "parsed" = ${structuredFields.parsed},
+            "flexTemplate" = ${structuredFields.flexTemplate},
+            "confidence" = ${structuredFields.confidence}
+          WHERE "messageId" = ${messageId}
+        `;
+      }
 
       for (const event of messageEvents) {
         if (event.source?.type === "user") {

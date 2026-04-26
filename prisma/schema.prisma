@@ -23,9 +23,18 @@ model Message {
   text       String?
   type       String
   rawPayload Json
+  context    String?
+  contexts   String[] @default([])
+  parsed     Json?
+  flexTemplate String?
+  confidence Decimal?
+  importBatchId String?
   timestamp  BigInt
   createdAt  DateTime @default(now())
 
+  @@unique([messageId])
+  @@index([context])
+  @@index([importBatchId])
   @@index([timestamp(sort: Desc)])
   @@index([createdAt(sort: Desc)])
 }
