@@ -1,900 +1,510 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { Avatar, EmptyPanel, type MessageRecord, useAutoTrackMessages } from "@/app/_components/group-console";
-import { buildHealthReport, extractTimedVitalsSamples } from "@/lib/health-report";
+import { type MessageRecord, useAutoTrackMessages } from "@/app/_components/group-console";
 
 type MiniAppReportProps = {
   selectedGroupId: string | null;
 };
 
-type ShiftKey = "day" | "night";
-type TimePointKey = "06:00" | "10:00" | "18:00" | "22:00";
-type MetricTone = "green" | "orange" | "red";
+type BpStatus = "normal" | "watch" | "high" | "consult";
 
-type ShiftSummary = {
-  key: ShiftKey;
-  label: string;
-  systolic: number | null;
-  diastolic: number | null;
-  heartRate: number | null;
-  temperature: number | null;
-  spo2: number | null;
-  isFallback: boolean;
+type BloodPressurePoint = {
+  day: number;
+  dateLabel: string;
+  systolic: number;
+  diastolic: number;
+  status: BpStatus;
 };
 
-type TimePointSummary = {
-  key: TimePointKey;
-  label: string;
-  shiftLabel: string;
-  systolic: number | null;
-  diastolic: number | null;
-  heartRate: number | null;
-  temperature: number | null;
-  spo2: number | null;
-  isFallback: boolean;
-};
+const BLOOD_PRESSURE_POINTS: BloodPressurePoint[] = [
+  { day: 1, dateLabel: "1 พ.ค.", systolic: 123, diastolic: 106, status: "normal" },
+  { day: 2, dateLabel: "2 พ.ค.", systolic: 129, diastolic: 109, status: "normal" },
+  { day: 3, dateLabel: "3 พ.ค.", systolic: 122, diastolic: 105, status: "watch" },
+  { day: 4, dateLabel: "4 พ.ค.", systolic: 118, diastolic: 102, status: "watch" },
+  { day: 5, dateLabel: "5 พ.ค.", systolic: 121, diastolic: 105, status: "watch" },
+  { day: 6, dateLabel: "6 พ.ค.", systolic: 128, diastolic: 109, status: "watch" },
+  { day: 7, dateLabel: "7 พ.ค.", systolic: 127, diastolic: 108, status: "high" },
+  { day: 8, dateLabel: "8 พ.ค.", systolic: 134, diastolic: 113, status: "high" },
+  { day: 9, dateLabel: "9 พ.ค.", systolic: 134, diastolic: 113, status: "high" },
+  { day: 10, dateLabel: "10 พ.ค.", systolic: 134, diastolic: 112, status: "high" },
+  { day: 11, dateLabel: "11 พ.ค.", systolic: 125, diastolic: 108, status: "watch" },
+  { day: 12, dateLabel: "12 พ.ค.", systolic: 126, diastolic: 107, status: "watch" },
+  { day: 13, dateLabel: "13 พ.ค.", systolic: 124, diastolic: 105, status: "watch" },
+  { day: 14, dateLabel: "14 พ.ค.", systolic: 121, diastolic: 103, status: "consult" },
+  { day: 15, dateLabel: "15 พ.ค.", systolic: 128, diastolic: 106, status: "consult" },
+  { day: 16, dateLabel: "16 พ.ค.", systolic: 134, diastolic: 109, status: "watch" },
+  { day: 17, dateLabel: "17 พ.ค.", systolic: 128, diastolic: 109, status: "watch" },
+  { day: 18, dateLabel: "18 พ.ค.", systolic: 123, diastolic: 107, status: "high" },
+  { day: 19, dateLabel: "19 พ.ค.", systolic: 127, diastolic: 103, status: "high" },
+  { day: 20, dateLabel: "20 พ.ค.", systolic: 134, diastolic: 103, status: "watch" },
+  { day: 21, dateLabel: "21 พ.ค.", systolic: 134, diastolic: 104, status: "normal" },
+  { day: 22, dateLabel: "22 พ.ค.", systolic: 140, diastolic: 109, status: "watch" },
+  { day: 23, dateLabel: "23 พ.ค.", systolic: 132, diastolic: 108, status: "watch" },
+  { day: 24, dateLabel: "24 พ.ค.", systolic: 138, diastolic: 106, status: "watch" },
+  { day: 25, dateLabel: "25 พ.ค.", systolic: 145, diastolic: 110, status: "watch" },
+  { day: 26, dateLabel: "26 พ.ค.", systolic: 136, diastolic: 110, status: "normal" },
+  { day: 27, dateLabel: "27 พ.ค.", systolic: 132, diastolic: 110, status: "normal" },
+  { day: 28, dateLabel: "28 พ.ค.", systolic: 126, diastolic: 109, status: "normal" },
+  { day: 29, dateLabel: "29 พ.ค.", systolic: 125, diastolic: 108, status: "normal" },
+  { day: 30, dateLabel: "30 พ.ค.", systolic: 119, diastolic: 106, status: "normal" },
+];
 
-const TIME_POINT_ORDER: TimePointKey[] = ["22:00", "06:00", "10:00", "18:00"];
-
-type TimelineGroup = {
-  key: ShiftKey;
-  label: string;
-  entries: {
-    id: string;
-    icon: string;
-    title: string;
-    detail: string;
-    timeLabel: string;
-  }[];
-};
-
-type ReminderStatus = "กินแล้ว" | "ยังไม่ได้บันทึก" | "เกินเวลา";
-
-const SHIFT_META: Record<ShiftKey, { label: string; fallback: Omit<ShiftSummary, "key" | "label" | "isFallback"> }> = {
-  day: {
-    label: "เวรกลางวัน (08:00–20:00)",
-    fallback: {
-      systolic: 122,
-      diastolic: 78,
-      heartRate: 74,
-      temperature: 36.8,
-      spo2: 98,
-    },
+const STATUS_STYLE: Record<BpStatus, { label: string; color: string; bg: string; ring: string }> = {
+  normal: {
+    label: "ปกติ (Normal)",
+    color: "text-emerald-700",
+    bg: "bg-emerald-500",
+    ring: "ring-emerald-100",
   },
-  night: {
-    label: "เวรกลางคืน (20:00–08:00)",
-    fallback: {
-      systolic: 118,
-      diastolic: 76,
-      heartRate: 70,
-      temperature: 36.7,
-      spo2: 97,
-    },
+  watch: {
+    label: "เฝ้าระวัง (Watch)",
+    color: "text-amber-700",
+    bg: "bg-amber-400",
+    ring: "ring-amber-100",
+  },
+  high: {
+    label: "สูง (High)",
+    color: "text-orange-700",
+    bg: "bg-orange-500",
+    ring: "ring-orange-100",
+  },
+  consult: {
+    label: "ควรปรึกษาแพทย์ (Consult)",
+    color: "text-red-700",
+    bg: "bg-red-500",
+    ring: "ring-red-100",
   },
 };
 
-const TIME_POINT_META: Record<TimePointKey, { label: string; shiftLabel: string; hour: number; minute: number }> = {
-  "22:00": { label: "22:00 น.", shiftLabel: "เวรกลางคืน (คืนก่อนหน้า)", hour: 22, minute: 0 },
-  "06:00": { label: "06:00 น.", shiftLabel: "เวรกลางคืน (เช้าวันรายงาน)", hour: 6, minute: 0 },
-  "10:00": { label: "10:00 น.", shiftLabel: "เวรกลางวัน", hour: 10, minute: 0 },
-  "18:00": { label: "18:00 น.", shiftLabel: "เวรกลางวัน", hour: 18, minute: 0 },
-};
-
-const TIME_POINT_FALLBACK: Record<TimePointKey, Omit<TimePointSummary, "key" | "label" | "shiftLabel" | "isFallback">> = {
-  "22:00": { systolic: 143, diastolic: 88, heartRate: 74, temperature: 36.3, spo2: 96 },
-  "06:00": { systolic: 119, diastolic: 85, heartRate: 88, temperature: 36.9, spo2: 99 },
-  "10:00": { systolic: 128, diastolic: 86, heartRate: 74, temperature: 36.3, spo2: 98 },
-  "18:00": { systolic: 106, diastolic: 72, heartRate: 74, temperature: 36.8, spo2: 97 },
-};
-
-function formatClock(timestamp: number) {
-  return new Intl.DateTimeFormat("th-TH", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(timestamp);
-}
-
-function getDayKey(timestamp: number) {
-  const date = new Date(timestamp);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
-}
-
-function offsetDayKey(dateKey: string, dayOffset: number) {
-  const date = new Date(`${dateKey}T00:00:00`);
-  date.setDate(date.getDate() + dayOffset);
-  return getDayKey(date.getTime());
-}
-
-function shortenUserId(userId: string | null | undefined) {
-  if (!userId) {
-    return "Unknown";
-  }
-
-  if (userId.length <= 16) {
-    return userId;
-  }
-
-  return `${userId.slice(0, 8)}...${userId.slice(-4)}`;
-}
-
-function getGroupName(messages: MessageRecord[]) {
-  const named = messages.find((message) => message.rawPayload?.lineIdentity?.groupName?.trim());
-  if (named?.rawPayload?.lineIdentity?.groupName) {
-    return named.rawPayload.lineIdentity.groupName;
-  }
-
-  const fallback = messages.find((message) => message.groupId);
-  return fallback?.groupId ? `Group ${fallback.groupId}` : "LINE Group";
-}
-
-function resolveReporterTimestamp(message: MessageRecord | undefined, dateKey: string) {
-  if (message?.timestamp) {
-    return Number(message.timestamp);
-  }
-
-  return new Date(`${dateKey}T00:00:00`).getTime();
-}
-
-function isTestMessage(message: MessageRecord) {
-  const text = `${message.text ?? ""} ${message.displayName ?? ""}`.toLowerCase();
-  return text.includes("test");
-}
-
-function isEligibleGroupMessage(message: MessageRecord, groupId: string) {
-  if (message.groupId !== groupId) {
-    return false;
-  }
-
-  if (message.source === "liff" || message.source === "web") {
-    return false;
-  }
-
-  if (message.type === "liff-profile" || message.type === "qr-scan" || message.type === "outbound") {
-    return false;
-  }
-
-  if (isTestMessage(message)) {
-    return false;
-  }
-
-  return true;
-}
-
-function getShiftFromHour(hour: number): ShiftKey {
-  return hour >= 8 && hour < 20 ? "day" : "night";
-}
-
-function createShiftSummaries(messages: MessageRecord[], dateKey: string) {
-  const dayMessages = messages.filter((message) => getDayKey(Number(message.timestamp)) === dateKey);
-  const timedSamples = extractTimedVitalsSamples(
-    dayMessages.map((message) => ({
-      id: message.id,
-      text: message.text,
-      contentUrl: message.contentUrl,
-      type: message.type,
-      timestamp: Number(message.timestamp),
-      displayName: message.displayName,
-      userId: message.userId,
-      pictureUrl: message.pictureUrl,
-      groupId: message.groupId,
-      groupName: message.rawPayload?.lineIdentity?.groupName ?? null,
-    })),
+function getGroupName(messages: MessageRecord[], selectedGroupId: string | null) {
+  const groupMessage = messages.find(
+    (message) => message.groupId === selectedGroupId && message.rawPayload?.lineIdentity?.groupName?.trim(),
   );
 
-  const summaries = (Object.keys(SHIFT_META) as ShiftKey[]).map((key) => {
-    const sample = timedSamples
-      .filter((item) => getShiftFromHour(item.hour) === key)
-      .sort((left, right) => {
-        if (left.sourceTimestamp !== right.sourceTimestamp) {
-          return right.sourceTimestamp - left.sourceTimestamp;
-        }
-
-        if (left.hour !== right.hour) {
-          return right.hour - left.hour;
-        }
-
-        return right.minute - left.minute;
-      })[0];
-
-    if (sample) {
-      return {
-        key,
-        label: SHIFT_META[key].label,
-        systolic: sample.systolic,
-        diastolic: sample.diastolic,
-        heartRate: sample.heartRate,
-        temperature: sample.temperature,
-        spo2: sample.spo2,
-        isFallback: false,
-      } satisfies ShiftSummary;
-    }
-
-    return {
-      key,
-      label: SHIFT_META[key].label,
-      ...SHIFT_META[key].fallback,
-      isFallback: true,
-    } satisfies ShiftSummary;
-  });
-
-  return {
-    hasRealData: summaries.some((summary) => !summary.isFallback),
-    summaries,
-  };
+  return groupMessage?.rawPayload?.lineIdentity?.groupName ?? "LINE Care Group";
 }
 
-function getTimePointKey(hour: number, minute: number): TimePointKey | null {
-  const minutes = hour * 60 + minute;
-  const nearest = TIME_POINT_ORDER
-    .map((key) => {
-      const meta = TIME_POINT_META[key];
-      return {
-        key,
-        distance: Math.abs(minutes - (meta.hour * 60 + meta.minute)),
-      };
-    })
-    .sort((left, right) => left.distance - right.distance)[0];
-
-  return nearest && nearest.distance <= 45 ? nearest.key : null;
-}
-
-function createTimePointSummaries(messages: MessageRecord[], dateKey: string) {
-  const previousDateKey = offsetDayKey(dateKey, -1);
-  const eligibleDateKeys = new Set([dateKey, previousDateKey]);
-  const dayMessages = messages.filter((message) => eligibleDateKeys.has(getDayKey(Number(message.timestamp))));
-  const timedSamples = extractTimedVitalsSamples(
-    dayMessages.map((message) => ({
-      id: message.id,
-      text: message.text,
-      contentUrl: message.contentUrl,
-      type: message.type,
-      timestamp: Number(message.timestamp),
-      displayName: message.displayName,
-      userId: message.userId,
-      pictureUrl: message.pictureUrl,
-      groupId: message.groupId,
-      groupName: message.rawPayload?.lineIdentity?.groupName ?? null,
-    })),
+function getPatientAvatar(messages: MessageRecord[], selectedGroupId: string | null) {
+  return (
+    messages.find((message) => message.groupId === selectedGroupId && message.pictureUrl)?.pictureUrl ??
+    null
   );
-
-  const sampleMap = new Map<TimePointKey, (typeof timedSamples)[number]>();
-
-  for (const sample of timedSamples) {
-    const key = getTimePointKey(sample.hour, sample.minute);
-    if (!key) {
-      continue;
-    }
-
-    const sourceDateKey = getDayKey(sample.sourceTimestamp);
-    const belongsToSelectedReportDate =
-      sourceDateKey === dateKey || (key === "22:00" && sourceDateKey === previousDateKey);
-
-    if (!belongsToSelectedReportDate) {
-      continue;
-    }
-
-    const current = sampleMap.get(key);
-    if (
-      !current ||
-      sample.sourceTimestamp > current.sourceTimestamp ||
-      (sample.sourceTimestamp === current.sourceTimestamp && sample.hour * 60 + sample.minute > current.hour * 60 + current.minute)
-    ) {
-      sampleMap.set(key, sample);
-    }
-  }
-
-  const hasAnyRealSample = sampleMap.size > 0;
-  const summaries = TIME_POINT_ORDER.map((key) => {
-    const meta = TIME_POINT_META[key];
-    const sample = sampleMap.get(key);
-
-    if (sample) {
-      return {
-        key,
-        label: meta.label,
-        shiftLabel: meta.shiftLabel,
-        systolic: sample.systolic,
-        diastolic: sample.diastolic,
-        heartRate: sample.heartRate,
-        temperature: sample.temperature,
-        spo2: sample.spo2,
-        isFallback: false,
-      } satisfies TimePointSummary;
-    }
-
-    if (hasAnyRealSample) {
-      return {
-        key,
-        label: meta.label,
-        shiftLabel: meta.shiftLabel,
-        systolic: null,
-        diastolic: null,
-        heartRate: null,
-        temperature: null,
-        spo2: null,
-        isFallback: false,
-      } satisfies TimePointSummary;
-    }
-
-    return {
-      key,
-      label: meta.label,
-      shiftLabel: meta.shiftLabel,
-      ...TIME_POINT_FALLBACK[key],
-      isFallback: true,
-    } satisfies TimePointSummary;
-  });
-
-  return {
-    hasRealData: summaries.some((summary) => !summary.isFallback),
-    summaries,
-  };
 }
 
-function toneClasses(tone: MetricTone) {
-  if (tone === "red") {
-    return "bg-rose-50 text-rose-700 ring-rose-100";
+function AppIcon({ name }: { name: "back" | "home" | "more" | "edit" | "bell" | "eye" | "doc" | "shield" }) {
+  const common = "h-6 w-6 stroke-current";
+
+  if (name === "back") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M15 18 9 12l6-6" />
+      </svg>
+    );
   }
 
-  if (tone === "orange") {
-    return "bg-amber-50 text-amber-700 ring-amber-100";
+  if (name === "home") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m3 11 9-8 9 8" />
+        <path d="M5 10v10h5v-6h4v6h5V10" />
+      </svg>
+    );
   }
 
-  return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+  if (name === "more") {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" className={common}>
+        <circle cx="5" cy="12" r="1.8" />
+        <circle cx="12" cy="12" r="1.8" />
+        <circle cx="19" cy="12" r="1.8" />
+      </svg>
+    );
+  }
+
+  if (name === "edit") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+        <path d="m13.5 6.5 4 4" />
+      </svg>
+    );
+  }
+
+  if (name === "bell") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 9a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+        <path d="M10 21h4" />
+      </svg>
+    );
+  }
+
+  if (name === "eye") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    );
+  }
+
+  if (name === "doc") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 3h7l4 4v14H7V3Z" />
+        <path d="M14 3v5h5M9 13h6M9 17h6" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={common} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3 5 6v5c0 5 3.5 8.5 7 10 3.5-1.5 7-5 7-10V6l-7-3Z" />
+      <path d="M9 12h6M12 9v6" />
+    </svg>
+  );
 }
 
-function heroGradient(tone: MetricTone) {
-  if (tone === "red") {
-    return "from-[#0D47A1] via-[#1976D2] to-[#E53935]";
-  }
-
-  if (tone === "orange") {
-    return "from-[#0D47A1] via-[#1976D2] to-[#FFB300]";
-  }
-
-  return "from-[#0D47A1] via-[#1976D2] to-[#38BDF8]";
+function AutoHealthMark() {
+  return (
+    <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#1E6BFF] text-white shadow-[0_10px_24px_-12px_rgba(30,107,255,0.9)]">
+      <svg viewBox="0 0 32 32" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 5v22M5 16h22" />
+        <path d="M16 5c4 2 6 5 6 11s-2 9-6 11c-4-2-6-5-6-11s2-9 6-11Z" opacity="0.55" />
+      </svg>
+    </div>
+  );
 }
 
-function normalizeValue(value: number | null, min: number, max: number) {
-  if (value === null) {
-    return null;
-  }
-
-  const clamped = Math.max(min, Math.min(max, value));
-  return (clamped - min) / (max - min);
+function LineBadge() {
+  return (
+    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#06C755] text-[10px] font-black text-white ring-4 ring-emerald-50">
+      LINE
+    </div>
+  );
 }
 
-function buildGraphSeries(
-  summaries: TimePointSummary[],
-  metric: "systolic" | "heartRate" | "temperature" | "spo2",
-) {
+function TopAppHeader() {
+  return (
+    <header className="sticky top-0 z-30 border-b border-slate-100 bg-white/90 px-5 pb-3 pt-4 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[430px] items-center justify-between">
+        <div className="flex items-center gap-3 text-slate-950">
+          <button type="button" aria-label="Back" className="-ml-2 rounded-full p-2">
+            <AppIcon name="back" />
+          </button>
+          <LineBadge />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <AutoHealthMark />
+          <span className="text-2xl font-semibold tracking-[-0.04em] text-[#06133A]">AutoHealth</span>
+        </div>
+
+        <div className="flex items-center gap-2 text-slate-950">
+          <button type="button" aria-label="Home" className="rounded-full p-2">
+            <AppIcon name="home" />
+          </button>
+          <button type="button" aria-label="More" className="-mr-2 rounded-full p-2">
+            <AppIcon name="more" />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function PatientPhoto({ src }: { src: string | null }) {
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt="คุณพ่อไพโรจน์" className="h-24 w-24 shrink-0 rounded-full object-cover ring-4 ring-white" />
+    );
+  }
+
+  return (
+    <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-100 to-blue-50 text-3xl font-semibold text-[#1E6BFF] ring-4 ring-white">
+      พ
+    </div>
+  );
+}
+
+function PatientProfileCard({
+  avatarUrl,
+  onEditDob,
+}: {
+  avatarUrl: string | null;
+  onEditDob: () => void;
+}) {
+  return (
+    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.35)]">
+      <div className="flex items-center gap-5">
+        <PatientPhoto src={avatarUrl} />
+        <div className="min-w-0 flex-1">
+          <h1 className="text-3xl font-semibold tracking-[-0.05em] text-[#06133A]">คุณพ่อไพโรจน์</h1>
+          <button
+            type="button"
+            onClick={onEditDob}
+            className="mt-2 inline-flex items-center gap-2 text-left text-lg text-slate-500"
+          >
+            <span>12 มี.ค. 2493 (73 ปี)</span>
+            <span className="inline-flex items-center gap-1 text-[#1E6BFF]">
+              <AppIcon name="edit" />
+              <span className="text-base">แก้ไข</span>
+            </span>
+          </button>
+          <p className="mt-1 text-base text-slate-500">รายงานความดัน 30 วันล่าสุด</p>
+        </div>
+        <div className="flex shrink-0 flex-col items-center justify-center rounded-[22px] bg-amber-50 px-4 py-4 text-amber-700 ring-1 ring-amber-100">
+          <AppIcon name="eye" />
+          <span className="mt-1 text-lg font-medium">เฝ้าระวัง</span>
+          <span className="text-sm">(Watch)</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AlertCard() {
+  return (
+    <section className="flex items-center gap-5 rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 to-white px-5 py-5 text-amber-900 shadow-[0_18px_50px_-40px_rgba(245,158,11,0.55)]">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-amber-200 bg-white/70 text-amber-500">
+        <AppIcon name="bell" />
+      </div>
+      <div>
+        <p className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
+          พบค่าความดันบางช่วงสูงกว่าค่ามาตรฐาน
+        </p>
+        <p className="mt-2 text-base leading-7 text-slate-600">
+          แนะนำติดตามค่าอย่างต่อเนื่อง และปรึกษาแพทย์หากมีค่าเพิ่มขึ้นต่อเนื่อง
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function makeChartPath(points: BloodPressurePoint[], metric: "systolic" | "diastolic") {
   const width = 680;
-  const height = 260;
-  const xStart = 110;
-  const xEnd = width - 110;
-  const step = summaries.length > 1 ? (xEnd - xStart) / (summaries.length - 1) : 0;
+  const height = 330;
+  const xStart = 48;
+  const xEnd = width - 56;
+  const yTop = 42;
+  const yBottom = height - 56;
+  const min = 100;
+  const max = 180;
+  const step = (xEnd - xStart) / (points.length - 1);
 
-  const [min, max] =
-    metric === "systolic"
-      ? [90, 180]
-      : metric === "heartRate"
-        ? [50, 120]
-        : metric === "temperature"
-          ? [35, 39]
-          : [90, 100];
-
-  const chartHeight = height - 80;
-
-  const points = summaries.map((item, index) => {
-    const value = item[metric];
-    const normalized = normalizeValue(value, min, max);
+  const coords = points.map((point, index) => {
+    const value = point[metric];
+    const normalized = (Math.max(min, Math.min(max, value)) - min) / (max - min);
     return {
-      key: item.key,
-      label: item.label,
       x: xStart + index * step,
-      y: normalized === null ? null : height - 40 - normalized * chartHeight,
+      y: yBottom - normalized * (yBottom - yTop),
       value,
+      point,
     };
   });
 
-  let path = "";
-
-  let isDrawing = false;
-  points.forEach((point) => {
-    if (point.y === null) {
-      isDrawing = false;
-      return;
-    }
-
-    path += `${isDrawing ? " L" : "M"} ${point.x} ${point.y}`;
-    isDrawing = true;
-  });
-
-  return { width, height, points, path };
-}
-
-function formatAxisLabel(metric: "systolic" | "heartRate" | "temperature" | "spo2", value: number) {
-  if (metric === "temperature") {
-    return `${value.toFixed(1)}°C`;
-  }
-
-  if (metric === "heartRate") {
-    return `${value} bpm`;
-  }
-
-  if (metric === "spo2") {
-    return `${value}%`;
-  }
-
-  return `${value}`;
-}
-
-function getMessageIconAndTitle(message: MessageRecord) {
-  const text = message.text ?? "";
-
-  if (message.contentUrl || message.type === "image") {
-    return { icon: "📷", title: "หลักฐานรูปภาพจาก LINE" };
-  }
-
-  if (text.includes("ยา")) {
-    return { icon: "💊", title: "การแจ้งเตือนการรับประทานยา" };
-  }
-
-  if (text.includes("อาหาร") || text.includes("มื้อ") || text.includes("ข้าว")) {
-    return { icon: "🍽️", title: "บันทึกมื้ออาหาร" };
-  }
-
-  if (/\d{2,3}\s*\/\s*\d{2,3}|SpO2|อุณหภูมิ|ชีพจร|หัวใจ/i.test(text)) {
-    return { icon: "🩺", title: "บันทึกข้อมูลสุขภาพ" };
-  }
-
-  return { icon: "📩", title: "หมายเหตุจากผู้ดูแล" };
-}
-
-function buildTimelineGroups(messages: MessageRecord[]) {
-  const groups: TimelineGroup[] = [
-    { key: "day", label: SHIFT_META.day.label, entries: [] },
-    { key: "night", label: SHIFT_META.night.label, entries: [] },
-  ];
-
-  const groupedMap = new Map<ShiftKey, TimelineGroup>(groups.map((group) => [group.key, group]));
-
-  [...messages]
-    .sort((left, right) => Number(left.timestamp) - Number(right.timestamp))
-    .forEach((message) => {
-      const shift = getShiftFromHour(new Date(Number(message.timestamp)).getHours());
-      const group = groupedMap.get(shift);
-      if (!group) {
-        return;
-      }
-
-      const meta = getMessageIconAndTitle(message);
-      group.entries.push({
-        id: message.id,
-        icon: meta.icon,
-        title: meta.title,
-        detail: message.text?.trim() || (message.contentUrl ? "แนบภาพประกอบสุขภาพจาก LINE" : "บันทึกจาก LINE"),
-        timeLabel: formatClock(Number(message.timestamp)),
-      });
-    });
-
-  return groups.filter((group) => group.entries.length > 0);
-}
-
-function buildMedicationReminders(messages: MessageRecord[], selectedDateKey: string) {
-  const now = new Date();
-  const todayKey = getDayKey(now.getTime());
-  const sameDay = selectedDateKey === todayKey;
-
-  const hasMedicationMention = {
-    day: messages.some((message) => {
-      const hour = new Date(Number(message.timestamp)).getHours();
-      return getShiftFromHour(hour) === "day" && (message.text ?? "").includes("ยา");
-    }),
-    night: messages.some((message) => {
-      const hour = new Date(Number(message.timestamp)).getHours();
-      return getShiftFromHour(hour) === "night" && (message.text ?? "").includes("ยา");
-    }),
+  return {
+    width,
+    height,
+    coords,
+    path: coords.map((coord, index) => `${index === 0 ? "M" : "L"} ${coord.x} ${coord.y}`).join(" "),
   };
-
-  const currentHour = now.getHours();
-
-  const getStatus = (shift: ShiftKey): ReminderStatus => {
-    if (hasMedicationMention[shift]) {
-      return "กินแล้ว";
-    }
-
-    if (!sameDay) {
-      return "เกินเวลา";
-    }
-
-    if (shift === "day" && currentHour >= 20) {
-      return "เกินเวลา";
-    }
-
-    if (shift === "night" && currentHour >= 8 && currentHour < 20) {
-      return "ยังไม่ได้บันทึก";
-    }
-
-    return "ยังไม่ได้บันทึก";
-  };
-
-  return [
-    { time: "08:00", title: "ยาหลังอาหาร", status: getStatus("day") },
-    { time: "20:00", title: "ยาก่อนนอน", status: getStatus("night") },
-  ];
 }
 
-function SummaryMetric({
-  icon,
-  label,
-  value,
-  unit,
-  tone,
-  statusLabel,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  unit: string;
-  tone: MetricTone;
-  statusLabel: string;
-}) {
-  return (
-    <div className="rounded-[24px] border border-slate-100 bg-slate-50/80 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-2">
-          <span className="text-lg leading-none">{icon}</span>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-        </div>
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${toneClasses(tone)}`}>
-          {statusLabel}
-        </span>
-      </div>
-      <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
-        {value}
-        <span className="ml-1 text-sm font-medium text-slate-400">{unit}</span>
-      </p>
-    </div>
-  );
-}
-
-function ShiftVitalsCard({
-  title,
-  summary,
-  reportTone,
-}: {
-  title: string;
-  summary: ShiftSummary;
-  reportTone: MetricTone;
-}) {
-  const bloodPressureValue =
-    summary.systolic !== null && summary.diastolic !== null
-      ? `${summary.systolic}/${summary.diastolic}`
-      : "ไม่มีข้อมูล";
+function BloodPressureChart() {
+  const systolic = makeChartPath(BLOOD_PRESSURE_POINTS, "systolic");
+  const diastolic = makeChartPath(BLOOD_PRESSURE_POINTS, "diastolic");
+  const tooltipPoint = BLOOD_PRESSURE_POINTS[15];
+  const tooltipCoord = systolic.coords[15];
 
   return (
-    <div className="rounded-[28px] border border-slate-100 bg-slate-50/80 p-4">
-      <div className="flex items-center justify-between gap-3">
+    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.28)]">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-slate-950">{title}</p>
-          <p className="mt-1 text-xs text-slate-500">{summary.label}</p>
+          <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">
+            แนวโน้มความดันโลหิต <span className="text-base font-normal text-slate-500">(Blood Pressure Trend)</span>
+          </h2>
+          <div className="mt-4 flex flex-wrap gap-5 text-sm text-slate-500">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-10 rounded-full bg-[#1E6BFF]" />
+              ความดันตัวบน (Systolic)
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-10 rounded-full bg-[#77BDFE]" />
+              ความดันตัวล่าง (Diastolic)
+            </span>
+          </div>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${toneClasses(reportTone)}`}>
-          {summary.isFallback ? "ค่าเดโม" : "ข้อมูลจริง"}
-        </span>
+        <p className="shrink-0 text-base text-slate-500">หน่วย: mmHg</p>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SummaryMetric
-          icon="🩺"
-          label="ความดันโลหิต"
-          value={bloodPressureValue}
-          unit="mmHg"
-          tone={reportTone}
-          statusLabel={bloodPressureValue === "ไม่มีข้อมูล" ? "ไม่มีข้อมูล" : "บันทึกแล้ว"}
-        />
-        <SummaryMetric
-          icon="❤️"
-          label="ชีพจร"
-          value={summary.heartRate !== null ? `${summary.heartRate}` : "ไม่มีข้อมูล"}
-          unit={summary.heartRate !== null ? "bpm" : ""}
-          tone={reportTone}
-          statusLabel={summary.heartRate !== null ? "บันทึกแล้ว" : "ไม่มีข้อมูล"}
-        />
-        <SummaryMetric
-          icon="🌡️"
-          label="อุณหภูมิร่างกาย"
-          value={summary.temperature !== null ? `${summary.temperature.toFixed(1)}` : "ไม่มีข้อมูล"}
-          unit={summary.temperature !== null ? "°C" : ""}
-          tone={reportTone}
-          statusLabel={summary.temperature !== null ? "บันทึกแล้ว" : "ไม่มีข้อมูล"}
-        />
-        <SummaryMetric
-          icon="🫁"
-          label="ค่าออกซิเจนในเลือด"
-          value={summary.spo2 !== null ? `${summary.spo2}` : "ไม่มีข้อมูล"}
-          unit={summary.spo2 !== null ? "%" : ""}
-          tone={reportTone}
-          statusLabel={summary.spo2 !== null ? "บันทึกแล้ว" : "ไม่มีข้อมูล"}
-        />
-      </div>
-    </div>
-  );
-}
+      <div className="mt-4 overflow-hidden rounded-[20px]">
+        <svg viewBox={`0 0 ${systolic.width} ${systolic.height}`} className="h-[310px] w-full" role="img" aria-label="Blood pressure trend for 30 days">
+          <defs>
+            <linearGradient id="riskNormal" x1="0" x2="1">
+              <stop offset="0%" stopColor="#E8F8EA" />
+              <stop offset="100%" stopColor="#F7FDF8" />
+            </linearGradient>
+            <linearGradient id="riskWatch" x1="0" x2="1">
+              <stop offset="0%" stopColor="#FFF8D8" />
+              <stop offset="100%" stopColor="#FFFDF0" />
+            </linearGradient>
+            <linearGradient id="riskHigh" x1="0" x2="1">
+              <stop offset="0%" stopColor="#FFF0DD" />
+              <stop offset="100%" stopColor="#FFF8EF" />
+            </linearGradient>
+            <linearGradient id="riskConsult" x1="0" x2="1">
+              <stop offset="0%" stopColor="#FFE6EA" />
+              <stop offset="100%" stopColor="#FFF4F5" />
+            </linearGradient>
+          </defs>
 
-function HealthGraph({
-  timePointSummaries,
-  useFallbackDemo,
-}: {
-  timePointSummaries: TimePointSummary[];
-  useFallbackDemo: boolean;
-}) {
-  const [selectedTimeKey, setSelectedTimeKey] = useState<TimePointKey>("22:00");
+          <rect x="48" y="42" width="576" height="70" fill="url(#riskConsult)" rx="8" />
+          <rect x="48" y="112" width="576" height="58" fill="url(#riskHigh)" />
+          <rect x="48" y="170" width="576" height="58" fill="url(#riskWatch)" />
+          <rect x="48" y="228" width="576" height="46" fill="url(#riskNormal)" />
 
-  const bloodPressureGraph = useMemo(() => buildGraphSeries(timePointSummaries, "systolic"), [timePointSummaries]);
-  const heartRateGraph = useMemo(() => buildGraphSeries(timePointSummaries, "heartRate"), [timePointSummaries]);
-  const temperatureGraph = useMemo(() => buildGraphSeries(timePointSummaries, "temperature"), [timePointSummaries]);
-  const spo2Graph = useMemo(() => buildGraphSeries(timePointSummaries, "spo2"), [timePointSummaries]);
-
-  const selectedTimePoint = timePointSummaries.find((item) => item.key === selectedTimeKey) ?? timePointSummaries[0];
-  const selectedShift = selectedTimePoint;
-
-  return (
-    <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_30px_90px_-56px_rgba(13,71,161,0.22)]">
-      <div className="text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-600">Health Graph</p>
-        <h3 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-slate-950">เปรียบเทียบแนวโน้มสุขภาพรายเวร</h3>
-        <p className="mt-2 text-sm text-slate-500">เวรกลางวัน (08:00–20:00) และ เวรกลางคืน (20:00–08:00)</p>
-        {useFallbackDemo ? (
-          <span className="mt-3 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-100">
-            แสดงค่าตัวอย่างสำหรับเดโม
-          </span>
-        ) : null}
-      </div>
-
-      <div className="mt-6 overflow-hidden rounded-[28px] bg-[radial-gradient(circle_at_top,#eef6ff_0%,#ffffff_60%)] px-2 py-4">
-        <svg viewBox={`0 0 ${bloodPressureGraph.width} ${bloodPressureGraph.height}`} className="h-[320px] w-full" role="img" aria-label="Daily shift comparison graph">
-          {[180, 150, 120, 90].map((value, index) => (
-            <text
-              key={`bp-axis-${value}`}
-              x="20"
-              y={56 + index * 56}
-              className="fill-blue-500 text-[11px]"
-            >
-              {formatAxisLabel("systolic", value)}
-            </text>
-          ))}
-          {[120, 100, 80, 60].map((value, index) => (
-            <text
-              key={`hr-axis-${value}`}
-              x="76"
-              y={56 + index * 56}
-              className="fill-violet-500 text-[11px]"
-            >
-              {formatAxisLabel("heartRate", value)}
-            </text>
-          ))}
-          {[39, 38, 37, 36].map((value, index) => (
-            <text
-              key={`temp-axis-${value}`}
-              x={bloodPressureGraph.width - 90}
-              y={56 + index * 56}
-              className="fill-rose-500 text-[11px]"
-            >
-              {formatAxisLabel("temperature", value)}
-            </text>
-          ))}
-          {[100, 98, 96, 94].map((value, index) => (
-            <text
-              key={`spo2-axis-${value}`}
-              x={bloodPressureGraph.width - 24}
-              y={56 + index * 56}
-              textAnchor="end"
-              className="fill-emerald-500 text-[11px]"
-            >
-              {formatAxisLabel("spo2", value)}
-            </text>
-          ))}
-
-          {[56, 112, 168].map((y) => (
-            <line
-              key={y}
-              x1="72"
-              x2={bloodPressureGraph.width - 72}
-              y1={y}
-              y2={y}
-              stroke="#E2E8F0"
-              strokeDasharray="6 8"
-            />
-          ))}
-
-          {bloodPressureGraph.points.map((point) => (
-            <g key={point.key}>
-              <line x1={point.x} x2={point.x} y1="28" y2={bloodPressureGraph.height - 48} stroke="#F1F5F9" />
-              <text x={point.x} y={bloodPressureGraph.height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
-                {point.label}
+          {[180, 160, 140, 120].map((value, index) => (
+            <g key={value}>
+              <text x="8" y={50 + index * 58} className="fill-slate-500 text-[13px]">
+                {value}
               </text>
+              <line x1="48" x2="624" y1={48 + index * 58} y2={48 + index * 58} stroke="#CBD5E1" strokeOpacity="0.45" />
             </g>
           ))}
 
-          <path d={bloodPressureGraph.path} fill="none" stroke="#1976D2" strokeWidth="4" strokeLinecap="round" />
-          <path d={heartRateGraph.path} fill="none" stroke="#7C4DFF" strokeWidth="4" strokeLinecap="round" />
-          <path d={temperatureGraph.path} fill="none" stroke="#E53935" strokeWidth="4" strokeLinecap="round" />
-          <path d={spo2Graph.path} fill="none" stroke="#00C853" strokeWidth="4" strokeLinecap="round" />
+          <text x="616" y="72" textAnchor="end" className="fill-red-500 text-[14px] font-medium">
+            ควรปรึกษาแพทย์
+          </text>
+          <text x="616" y="92" textAnchor="end" className="fill-red-500 text-[14px]">
+            (Consult)
+          </text>
+          <text x="616" y="146" textAnchor="end" className="fill-orange-500 text-[14px] font-medium">
+            สูง
+          </text>
+          <text x="616" y="166" textAnchor="end" className="fill-orange-500 text-[14px]">
+            (High)
+          </text>
+          <text x="616" y="206" textAnchor="end" className="fill-amber-500 text-[14px] font-medium">
+            เฝ้าระวัง
+          </text>
+          <text x="616" y="226" textAnchor="end" className="fill-amber-500 text-[14px]">
+            (Watch)
+          </text>
+          <text x="616" y="260" textAnchor="end" className="fill-emerald-600 text-[14px] font-medium">
+            ปกติ
+          </text>
+          <text x="616" y="280" textAnchor="end" className="fill-emerald-600 text-[14px]">
+            (Normal)
+          </text>
 
-          {bloodPressureGraph.points.map((point) =>
-            point.y === null ? null : (
-              <circle
-                key={`bp-${point.key}`}
-                cx={point.x}
-                cy={point.y}
-                r="6"
-                fill="#1976D2"
-                onClick={() => setSelectedTimeKey(point.key)}
-              />
-            ),
-          )}
-          {heartRateGraph.points.map((point) =>
-            point.y === null ? null : (
-              <circle
-                key={`hr-${point.key}`}
-                cx={point.x}
-                cy={point.y}
-                r="6"
-                fill="#7C4DFF"
-                onClick={() => setSelectedTimeKey(point.key)}
-              />
-            ),
-          )}
-          {temperatureGraph.points.map((point) =>
-            point.y === null ? null : (
-              <circle
-                key={`temp-${point.key}`}
-                cx={point.x}
-                cy={point.y}
-                r="6"
-                fill="#E53935"
-                onClick={() => setSelectedTimeKey(point.key)}
-              />
-            ),
-          )}
-          {spo2Graph.points.map((point) =>
-            point.y === null ? null : (
-              <circle
-                key={`spo2-${point.key}`}
-                cx={point.x}
-                cy={point.y}
-                r="6"
-                fill="#00C853"
-                onClick={() => setSelectedTimeKey(point.key)}
-              />
-            ),
-          )}
+          <path d={systolic.path} fill="none" stroke="#1E6BFF" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={diastolic.path} fill="none" stroke="#77BDFE" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+
+          {systolic.coords.map((coord) => (
+            <circle key={`sys-${coord.point.day}`} cx={coord.x} cy={coord.y} r="4.2" fill="#1E6BFF" stroke="white" strokeWidth="2" />
+          ))}
+          {diastolic.coords.map((coord) => (
+            <circle key={`dia-${coord.point.day}`} cx={coord.x} cy={coord.y} r="4.2" fill="#77BDFE" stroke="white" strokeWidth="2" />
+          ))}
+
+          <line x1={tooltipCoord.x} x2={tooltipCoord.x} y1="42" y2="274" stroke="#94A3B8" strokeDasharray="4 5" opacity="0.6" />
+          <g transform={`translate(${tooltipCoord.x - 52} 72)`}>
+            <rect width="112" height="92" rx="10" fill="white" filter="drop-shadow(0 8px 14px rgba(15,23,42,0.18))" />
+            <text x="16" y="26" className="fill-slate-900 text-[14px] font-semibold">Day {tooltipPoint.day}</text>
+            <circle cx="18" cy="52" r="5" fill="#1E6BFF" />
+            <text x="32" y="56" className="fill-slate-700 text-[13px]">ตัวบน {tooltipPoint.systolic}</text>
+            <circle cx="18" cy="74" r="5" fill="#77BDFE" />
+            <text x="32" y="78" className="fill-slate-700 text-[13px]">ตัวล่าง {tooltipPoint.diastolic}</text>
+          </g>
+
+          {[
+            { label: "1 พ.ค.", x: 58 },
+            { label: "8 พ.ค.", x: 194 },
+            { label: "15 พ.ค.", x: 346 },
+            { label: "22 พ.ค.", x: 494 },
+            { label: "29 พ.ค.", x: 612 },
+          ].map((item) => (
+            <text key={item.label} x={item.x} y="318" textAnchor="middle" className="fill-slate-500 text-[13px]">
+              {item.label}
+            </text>
+          ))}
         </svg>
       </div>
+    </section>
+  );
+}
 
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">BP</span>
-        <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">HR</span>
-        <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700">Temp</span>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">SpO2</span>
-      </div>
-
-      {selectedShift ? (
-        <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
-          <p className="text-sm font-semibold text-slate-950">
-            {selectedShift.label} · {selectedShift.shiftLabel}
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
-            <p>BP: {selectedShift.systolic && selectedShift.diastolic ? `${selectedShift.systolic}/${selectedShift.diastolic}` : "ไม่มีข้อมูล"}</p>
-            <p>HR: {selectedShift.heartRate !== null ? `${selectedShift.heartRate} bpm` : "ไม่มีข้อมูล"}</p>
-            <p>Temp: {selectedShift.temperature !== null ? `${selectedShift.temperature.toFixed(1)}°C` : "ไม่มีข้อมูล"}</p>
-            <p>SpO2: {selectedShift.spo2 !== null ? `${selectedShift.spo2}%` : "ไม่มีข้อมูล"}</p>
+function AverageCards() {
+  return (
+    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.28)]">
+      <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">ค่าเฉลี่ย 30 วัน</h2>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <div className="flex items-center gap-4 rounded-[20px] bg-gradient-to-br from-blue-50 to-white p-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#1E6BFF] text-white">
+            <AutoHealthMark />
+          </div>
+          <div>
+            <p className="text-sm text-slate-600">ความดันตัวบน <span className="text-[#1E6BFF]">(Systolic)</span></p>
+            <p className="mt-1 text-4xl font-semibold tracking-[-0.06em] text-[#06133A]">
+              132 <span className="text-lg font-normal text-slate-500">mmHg</span>
+            </p>
           </div>
         </div>
-      ) : null}
-    </section>
-  );
-}
-
-function MedicationReminder({
-  reminders,
-}: {
-  reminders: { time: string; title: string; status: ReminderStatus }[];
-}) {
-  return (
-    <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-52px_rgba(15,23,42,0.2)]">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Medication Reminder</p>
-        <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">การแจ้งเตือนการรับประทานยา</h3>
-      </div>
-
-      <div className="mt-5 space-y-3">
-        {reminders.map((item) => {
-          const tone =
-            item.status === "กินแล้ว"
-              ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-              : item.status === "เกินเวลา"
-                ? "bg-rose-50 text-rose-700 ring-rose-100"
-                : "bg-amber-50 text-amber-700 ring-amber-100";
-
-          return (
-            <div key={`${item.time}-${item.title}`} className="flex items-center justify-between rounded-[24px] border border-slate-100 bg-slate-50/80 px-4 py-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-950">
-                  {item.time} · {item.title}
-                </p>
-              </div>
-              <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${tone}`}>{item.status}</span>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function HealthCriteria({
-  items,
-}: {
-  items: { label: string; detail: string }[];
-}) {
-  return (
-    <details className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-52px_rgba(15,23,42,0.18)]">
-      <summary className="flex cursor-pointer items-center justify-between gap-3 text-left">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Health Criteria</p>
-          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">เกณฑ์อ้างอิง</h3>
+        <div className="flex items-center gap-4 rounded-[20px] bg-gradient-to-br from-sky-50 to-white p-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#77BDFE] text-2xl font-bold text-white">
+            +
+          </div>
+          <div>
+            <p className="text-sm text-slate-600">ความดันตัวล่าง <span className="text-sky-500">(Diastolic)</span></p>
+            <p className="mt-1 text-4xl font-semibold tracking-[-0.06em] text-[#06133A]">
+              86 <span className="text-lg font-normal text-slate-500">mmHg</span>
+            </p>
+          </div>
         </div>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">i</span>
-      </summary>
+      </div>
+    </section>
+  );
+}
 
-      <div className="mt-5 space-y-3">
-        {items.map((item) => (
-          <div key={item.label} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
-            <p className="text-sm font-semibold text-slate-950">{item.label}</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</p>
+function TrendSummaryCard() {
+  return (
+    <section className="flex items-center gap-5 rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-blue-500 text-white">
+        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m4 16 5-5 4 4 7-8" />
+          <path d="M15 7h5v5" />
+        </svg>
+      </div>
+      <div>
+        <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">แนวโน้ม</h2>
+        <p className="mt-2 text-xl font-semibold text-[#06133A]">ความดันมีแนวโน้มสูงในบางช่วงของวัน</p>
+        <p className="mt-1 text-base text-slate-500">ควรวัดค่าในเวลาเดิมอย่างสม่ำเสมอ</p>
+      </div>
+    </section>
+  );
+}
+
+function Overview30Days() {
+  return (
+    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
+      <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">ภาพรวม 30 วัน</h2>
+      <div className="mt-4 grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(15, minmax(0, 1fr))" }}>
+        {BLOOD_PRESSURE_POINTS.map((point) => (
+          <div key={point.day} className="flex flex-col items-center gap-1.5">
+            <span className={`h-6 w-6 rounded-md ${STATUS_STYLE[point.status].bg} shadow-sm`} />
+            <span className="text-xs text-slate-500">{point.day}</span>
           </div>
         ))}
       </div>
-    </details>
-  );
-}
-
-function TimelineStory({ groups }: { groups: TimelineGroup[] }) {
-  return (
-    <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-52px_rgba(15,23,42,0.2)]">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Timeline</p>
-        <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">เรื่องราวการดูแลในแต่ละเวร</h3>
-      </div>
-
-      <div className="mt-5 space-y-6">
-        {groups.map((group) => (
-          <div key={group.key}>
-            <p className="text-sm font-semibold text-slate-900">{group.label}</p>
-            <div className="mt-4 space-y-4">
-              {group.entries.map((entry, index) => (
-                <div key={entry.id} className="flex gap-4">
-                  <div className="flex w-10 shrink-0 flex-col items-center">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-lg">
-                      {entry.icon}
-                    </div>
-                    {index < group.entries.length - 1 ? <div className="mt-2 h-full w-px bg-slate-200" /> : null}
-                  </div>
-                  <div className="pb-3">
-                    <p className="text-xs text-slate-400">{entry.timeLabel}</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-950">{entry.title}</p>
-                    <p className="mt-2 text-sm leading-7 text-slate-600">{entry.detail}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <div className="mt-5 grid grid-cols-2 gap-3 rounded-[18px] border border-slate-100 bg-white px-4 py-4 sm:grid-cols-4">
+        {(Object.keys(STATUS_STYLE) as BpStatus[]).map((status) => (
+          <div key={status} className="flex items-center gap-2">
+            <span className={`h-5 w-5 rounded-md ${STATUS_STYLE[status].bg}`} />
+            <span className={`text-sm ${STATUS_STYLE[status].color}`}>{STATUS_STYLE[status].label}</span>
           </div>
         ))}
       </div>
@@ -902,262 +512,178 @@ function TimelineStory({ groups }: { groups: TimelineGroup[] }) {
   );
 }
 
-function EvidenceGallery({
-  images,
-}: {
-  images: { id: string; title: string; subtitle: string; imageUrl: string }[];
-}) {
-  return (
-    <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-52px_rgba(15,23,42,0.2)]">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Evidence</p>
-        <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">หลักฐานจาก LINE</h3>
-      </div>
+function ReferenceCriteriaCard() {
+  const rows = [
+    {
+      icon: "doc" as const,
+      text: "อ้างอิงเกณฑ์แนวทางเวชปฏิบัติสำหรับกระทรวงสาธารณสุข",
+    },
+    {
+      icon: "shield" as const,
+      text: "ข้อมูลที่ใช้เพื่อการติดตามสุขภาพเท่านั้น ไม่ใช่การวินิจฉัยจากการแพทย์",
+    },
+  ];
 
-      <div className="mt-5 grid gap-4">
-        {images.length === 0 ? (
-          <EmptyPanel title="ยังไม่มีหลักฐานรูปภาพ" description="เมื่อมีการแนบรูปในกลุ่ม ระบบจะแสดงเป็นการ์ดขนาดใหญ่ในส่วนนี้" />
-        ) : (
-          images.map((item) => (
-            <article key={item.id} className="overflow-hidden rounded-[28px] border border-slate-100 bg-slate-50">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={item.imageUrl} alt={item.title} className="h-64 w-full object-cover" />
-              <div className="p-4">
-                <p className="text-base font-semibold text-slate-950">{item.title}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{item.subtitle}</p>
-              </div>
-            </article>
-          ))
-        )}
+  return (
+    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.22)]">
+      <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#06133A]">อ้างอิงเกณฑ์</h2>
+      <div className="mt-3 divide-y divide-slate-100">
+        {rows.map((row) => (
+          <button key={row.text} type="button" className="flex w-full items-center gap-4 py-4 text-left">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <AppIcon name={row.icon} />
+            </span>
+            <span className="flex-1 text-base leading-6 text-slate-600">{row.text}</span>
+            <span className="text-2xl text-slate-400">›</span>
+          </button>
+        ))}
       </div>
     </section>
+  );
+}
+
+function BottomNavigation() {
+  const tabs = [
+    { label: "หน้าหลัก", icon: "⌂", active: true },
+    { label: "รายงาน", icon: "▤", active: false },
+    { label: "บันทึก", icon: "+", active: false },
+    { label: "แจ้งเตือน", icon: "♢", active: false },
+    { label: "ฉัน", icon: "○", active: false },
+  ];
+
+  return (
+    <nav className="sticky bottom-0 z-30 border-t border-slate-100 bg-white/95 px-4 pb-4 pt-2 backdrop-blur-xl">
+      <div className="mx-auto grid max-w-[430px] grid-cols-5 items-end gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.label}
+            type="button"
+            className={`flex flex-col items-center gap-1 text-xs ${tab.active ? "text-[#1E6BFF]" : "text-slate-500"}`}
+          >
+            <span
+              className={`flex items-center justify-center ${
+                tab.label === "บันทึก"
+                  ? "h-14 w-14 -translate-y-3 rounded-full bg-[#1E6BFF] text-3xl text-white shadow-[0_16px_30px_-16px_rgba(30,107,255,0.9)]"
+                  : "h-8 w-8 text-2xl"
+              }`}
+            >
+              {tab.icon}
+            </span>
+            <span className={tab.label === "บันทึก" ? "-mt-3" : ""}>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mx-auto mt-3 h-1 w-32 rounded-full bg-slate-950" />
+    </nav>
+  );
+}
+
+function EditDOBBottomSheet({
+  open,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/20">
+      <section className="w-full max-w-[430px] rounded-t-[34px] bg-white px-6 pb-8 pt-4 shadow-[0_-24px_60px_-30px_rgba(15,23,42,0.55)]">
+        <div className="mx-auto h-1.5 w-16 rounded-full bg-slate-300" />
+        <h2 className="mt-8 text-center text-3xl font-semibold tracking-[-0.05em] text-[#06133A]">
+          แก้ไขวันเดือนปีเกิด
+        </h2>
+        <label className="mt-8 block text-base font-medium text-slate-900">
+          วันเดือนปีเกิด
+          <button
+            type="button"
+            className="mt-3 flex w-full items-center justify-between rounded-[18px] border border-slate-300 bg-white px-4 py-4 text-left text-2xl text-slate-800"
+          >
+            <span className="inline-flex items-center gap-3">
+              <span className="text-slate-500">▣</span>
+              12 มี.ค. 2493
+            </span>
+            <span className="text-slate-500">⌄</span>
+          </button>
+        </label>
+        <p className="mt-3 text-sm text-slate-500">รูปแบบ: วว/ดด/ปปปป (พ.ศ.)</p>
+        <div className="mt-5 rounded-[18px] bg-blue-50 px-4 py-4 text-base leading-7 text-slate-600">
+          เมื่อบันทึกแล้ว อายุจะถูกคำนวณใหม่อัตโนมัติ และข้อมูลที่เกี่ยวข้องจะถูกอัปเดต
+        </div>
+        <div className="mt-8 grid grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-[18px] border border-slate-300 bg-white px-5 py-4 text-xl font-semibold text-slate-950"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded-[18px] bg-[#1E6BFF] px-5 py-4 text-xl font-semibold text-white shadow-[0_16px_28px_-18px_rgba(30,107,255,0.95)]"
+          >
+            บันทึก
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SaveToast({ show }: { show: boolean }) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <div className="fixed bottom-24 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-[18px] bg-slate-900/92 px-6 py-4 text-lg font-medium text-white shadow-2xl">
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500">✓</span>
+      บันทึกเรียบร้อย
+    </div>
   );
 }
 
 export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
-  const { messages, status, error, setupMessage } = useAutoTrackMessages();
-  const [selectedDateIndex] = useState(0);
+  const { messages } = useAutoTrackMessages();
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
-  const filteredMessages = useMemo(() => {
-    if (!selectedGroupId) {
-      return [];
-    }
+  const groupName = useMemo(() => getGroupName(messages, selectedGroupId), [messages, selectedGroupId]);
+  const avatarUrl = useMemo(() => getPatientAvatar(messages, selectedGroupId), [messages, selectedGroupId]);
 
-    return messages.filter((message) => isEligibleGroupMessage(message, selectedGroupId));
-  }, [messages, selectedGroupId]);
-
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "development") {
-      return;
-    }
-
-    console.log("[MiniApp] selectedGroupId", selectedGroupId);
-    messages.forEach((message) => {
-      console.log("[MiniApp] incoming message groupId", message.groupId);
-      if (selectedGroupId && message.groupId !== selectedGroupId) {
-        console.log("[MiniApp] skip render because groupId mismatch", {
-          selectedGroupId,
-          incomingGroupId: message.groupId,
-          messageId: message.id,
-        });
-      }
-    });
-  }, [messages, selectedGroupId]);
-
-  const availableDates = useMemo(() => {
-    const unique = new Set(filteredMessages.map((message) => getDayKey(Number(message.timestamp))));
-    return Array.from(unique).sort((left, right) => new Date(right).getTime() - new Date(left).getTime());
-  }, [filteredMessages]);
-
-  const selectedDateKey = availableDates[selectedDateIndex] ?? null;
-
-  const dayMessages = useMemo(() => {
-    if (!selectedDateKey) {
-      return [];
-    }
-
-    return filteredMessages.filter((message) => getDayKey(Number(message.timestamp)) === selectedDateKey);
-  }, [filteredMessages, selectedDateKey]);
-
-  const report = useMemo(() => {
-    if (dayMessages.length === 0) {
-      return null;
-    }
-
-    return buildHealthReport(
-      dayMessages.map((message) => ({
-        id: message.id,
-        text: message.text,
-        contentUrl: message.contentUrl,
-        type: message.type,
-        timestamp: Number(message.timestamp),
-        displayName: message.displayName,
-        userId: message.userId,
-        pictureUrl: message.pictureUrl,
-        groupId: message.groupId,
-        groupName: message.rawPayload?.lineIdentity?.groupName ?? null,
-      })),
-    );
-  }, [dayMessages]);
-
-  const shiftData = useMemo(() => {
-    if (!selectedDateKey) {
-      return { hasRealData: false, summaries: [] as ShiftSummary[] };
-    }
-
-    return createShiftSummaries(filteredMessages, selectedDateKey);
-  }, [filteredMessages, selectedDateKey]);
-
-  const timePointData = useMemo(() => {
-    if (!selectedDateKey) {
-      return { hasRealData: false, summaries: [] as TimePointSummary[] };
-    }
-
-    return createTimePointSummaries(filteredMessages, selectedDateKey);
-  }, [filteredMessages, selectedDateKey]);
-
-  const medicationReminders = useMemo(() => {
-    if (!selectedDateKey) {
-      return [];
-    }
-
-    return buildMedicationReminders(dayMessages, selectedDateKey);
-  }, [dayMessages, selectedDateKey]);
-
-  const timelineGroups = useMemo(() => buildTimelineGroups(dayMessages), [dayMessages]);
-
-  const evidenceImages = useMemo(
-    () =>
-      dayMessages
-        .filter((message) => Boolean(message.contentUrl))
-        .map((message) => ({
-          id: message.id,
-          title: "ภาพประกอบสุขภาพ",
-          subtitle: "ภาพจาก LINE chat",
-          imageUrl: message.contentUrl as string,
-        })),
-    [dayMessages],
-  );
-
-  if (!selectedGroupId) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-4 py-6">
-        <div className="mx-auto max-w-4xl">
-          <EmptyPanel title="ยังไม่มีข้อมูลจากกลุ่มนี้" description="เปิดรายงานจาก dashboard หรือส่ง groupId มาที่ /mini-app?groupId=..." />
-        </div>
-      </main>
-    );
+  function handleSaveDob() {
+    setIsEditOpen(false);
+    setShowToast(true);
+    window.setTimeout(() => setShowToast(false), 1800);
   }
-
-  if (error) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-4 py-6">
-        <div className="mx-auto max-w-4xl rounded-[28px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-          {error}
-        </div>
-      </main>
-    );
-  }
-
-  if (setupMessage) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-4 py-6">
-        <div className="mx-auto max-w-4xl rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-700">
-          {setupMessage}
-        </div>
-      </main>
-    );
-  }
-
-  if (!report || !selectedDateKey) {
-    return (
-      <main className="min-h-screen bg-[linear-gradient(180deg,#f7fbff_0%,#f8fafc_100%)] px-4 py-6">
-        <div className="mx-auto max-w-4xl space-y-4">
-          <section className="overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0D47A1_0%,#1976D2_52%,#38BDF8_100%)] px-6 py-7 text-white shadow-[0_40px_120px_-56px_rgba(13,71,161,0.5)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">AutoHealth Mini App</p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.05em]">Patient Health Story from LINE Group</h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/80">รายงานสุขภาพนี้จะแสดงเฉพาะข้อมูลของกลุ่ม LINE ที่เลือกเท่านั้น เพื่อให้ครอบครัวเห็นเรื่องราวสุขภาพที่ชัดเจนและน่าเชื่อถือ</p>
-          </section>
-          <EmptyPanel title="ยังไม่มีข้อมูลจากกลุ่มนี้" description="เมื่อมีข้อความสุขภาพจากกลุ่มที่เลือก ระบบจะแสดงรายงานสุขภาพของกลุ่มนี้เท่านั้น" />
-        </div>
-      </main>
-    );
-  }
-
-  const latestMessage = dayMessages[0];
-  const groupName = getGroupName(dayMessages);
-  const reporterTimestamp = resolveReporterTimestamp(latestMessage, selectedDateKey);
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#f7fbff_0%,#f8fafc_100%)] px-4 py-6 text-slate-900">
-      <div className="mx-auto max-w-4xl space-y-5">
-        <div className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
-          📍 กลุ่ม: {groupName}
-        </div>
+    <main className="min-h-screen bg-[#F7F9FC] text-[#06133A]">
+      <TopAppHeader />
 
-        <section className={`overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,var(--tw-gradient-stops))] px-6 py-7 text-white shadow-[0_40px_120px_-56px_rgba(13,71,161,0.5)] ${heroGradient(report.statusTone)}`}>
-          <div className="space-y-5">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">AutoHealth Mini App</p>
-              <p className="mt-4 text-sm font-medium text-white/80">รายงานสุขภาพประจำวัน</p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em]">กลุ่ม: {groupName}</h1>
-              <p className="mt-3 text-2xl font-semibold tracking-[-0.04em]">สุขภาพโดยรวม: {report.statusLabel}</p>
-              
-            </div>
+      <div className="mx-auto max-w-[430px] space-y-4 px-4 pb-6 pt-4">
+        <p className="rounded-full bg-white px-4 py-2 text-sm text-slate-500 shadow-sm ring-1 ring-slate-100">
+          กลุ่ม LINE: {groupName}
+        </p>
 
-            
-          </div>
-        </section>
-
-        <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-52px_rgba(15,23,42,0.2)]">
-          <div className="flex items-center gap-4">
-            <Avatar avatarUrl={report.reporterAvatarUrl} displayName={report.reporterName} size={56} />
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">ผู้รายงาน (Patient Reporter)</p>
-              <p className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">{report.reporterName}</p>
-              <p className="mt-1 text-sm text-slate-500">
-                {shortenUserId(latestMessage?.userId)} • {formatClock(reporterTimestamp)}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_-52px_rgba(56,189,248,0.22)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-600">Health Summary</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">สรุปสัญญาณชีพสำคัญ</h2>
-              <p className="mt-1 text-sm text-slate-500">แสดงข้อมูล 2 รอบของวันเดียวกัน แยกเป็นเวรกลางวันและเวรกลางคืน</p>
-            </div>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${toneClasses(report.statusTone)}`}>
-              {report.statusLabel}
-            </span>
-          </div>
-
-          <div className="mt-5 space-y-4">
-            {shiftData.summaries.map((summary) => (
-              <ShiftVitalsCard
-                key={summary.key}
-                title={summary.key === "day" ? "เวรกลางวัน" : "เวรกลางคืน"}
-                summary={summary}
-                reportTone={report.statusTone}
-              />
-            ))}
-          </div>
-        </section>
-
-        <HealthGraph timePointSummaries={timePointData.summaries} useFallbackDemo={!timePointData.hasRealData} />
-
-        <MedicationReminder reminders={medicationReminders} />
-
-        <HealthCriteria items={report.criteriaReference} />
-
-        <TimelineStory groups={timelineGroups} />
-
-        <EvidenceGallery images={evidenceImages} />
-
-        <div className="px-2 text-center text-xs text-slate-400">{status}</div>
+        <PatientProfileCard avatarUrl={avatarUrl} onEditDob={() => setIsEditOpen(true)} />
+        <AlertCard />
+        <BloodPressureChart />
+        <AverageCards />
+        <TrendSummaryCard />
+        <Overview30Days />
+        <ReferenceCriteriaCard />
       </div>
+
+      <BottomNavigation />
+      <EditDOBBottomSheet open={isEditOpen} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} />
+      <SaveToast show={showToast} />
     </main>
   );
 }
