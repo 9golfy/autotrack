@@ -6,7 +6,7 @@ export function buildSimpleTextFlex(input: FlexTemplateInput): LineFlexMessage {
     type: "flex",
     altText: "บันทึกข้อความเรียบร้อย",
     contents: baseBubble("บันทึกข้อความ", input, [
-      textBlock("ระบบบันทึกข้อความจาก LINE Care Group แล้ว", {
+      textBlock(`ระบบบันทึกข้อความจาก ${input.groupName ?? "LINE Care Group"} แล้ว`, {
         size: "sm",
         color: "#475569",
       }),

@@ -8,7 +8,7 @@ export function buildBloodPressureFlex(input: FlexTemplateInput): LineFlexMessag
     type: "flex",
     altText: `บันทึกความดัน ${bloodPressure.value} ${bloodPressure.unit}`,
     contents: baseBubble("บันทึกค่าความดัน", input, [
-      textBlock("ระบบบันทึกค่าความดันจาก LINE Care Group แล้ว สามารถติดตามแนวโน้มต่อในรายงานสุขภาพได้", {
+      textBlock(`ระบบบันทึกค่าความดันจาก ${input.groupName ?? "LINE Care Group"} แล้ว สามารถติดตามแนวโน้มต่อในรายงานสุขภาพได้`, {
         size: "sm",
         color: "#475569",
       }),

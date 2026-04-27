@@ -5,6 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { buildHealthReport, extractTimedVitalsSamples, type TimedVitalsSample } from "@/lib/health-report";
 import {
+  evaluateBloodPressure,
+  evaluateHeartRate,
+  evaluateRespiratoryRate,
+  evaluateSpo2,
+  evaluateTemperature,
+} from "@/lib/health-thresholds";
+import {
+  buildContextFlexMessage,
   detectSupabaseMessageContexts,
   getFlexTemplateForSupabaseContext,
   type LineFlexMessage,
@@ -521,6 +529,10 @@ function formatSampleValue(value: number | null, unit: string) {
   return value !== null ? `${value} ${unit}` : "ไม่มีข้อมูล";
 }
 
+function formatStatus(status: string) {
+  return `[${status}]`;
+}
+
 function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]) {
   const timeOrder = new Map([
     ["10:00", 1],
@@ -543,21 +555,42 @@ function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]) {
     cornerRadius: "16px",
     backgroundColor: "#F8FBFF",
     contents: [
-      { type: "text", text: `${sample.label} น.`, size: "sm", weight: "bold", color: "#0D47A1" },
+      { type: "text", text: `[${sample.label} น.]`, size: "sm", weight: "bold", color: "#0D47A1" },
       {
         type: "text",
-        text: `BP ${formatSampleBloodPressure(sample)} · HR ${formatSampleValue(sample.heartRate, "bpm")}`,
+        text: `👩‍⚕️ความดัน ${formatSampleBloodPressure(sample)} ${formatStatus(evaluateBloodPressure(sample.systolic, sample.diastolic).label)}`,
         size: "xs",
         color: "#111827",
         wrap: true,
       },
       {
         type: "text",
-        text: `RR ${formatSampleValue(sample.respiratoryRate, "ครั้ง/นาที")} · Temp ${
-          sample.temperature !== null ? `${sample.temperature.toFixed(1)} °C` : "ไม่มีข้อมูล"
-        } · SpO2 ${formatSampleValue(sample.spo2, "%")}`,
+        text: `🫀อัตราการเต้นของหัวใจ ${formatSampleValue(sample.heartRate, "bpm")} ${formatStatus(evaluateHeartRate(sample.heartRate).label)}`,
         size: "xs",
-        color: "#475569",
+        color: "#111827",
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: `🫁อัตราการหายใจ ${formatSampleValue(sample.respiratoryRate, "ครั้ง/นาที")} ${formatStatus(evaluateRespiratoryRate(sample.respiratoryRate).label)}`,
+        size: "xs",
+        color: "#111827",
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: `🌡อุณหภูมิร่างกาย ${
+          sample.temperature !== null ? `${sample.temperature.toFixed(1)} °C` : "ไม่มีข้อมูล"
+        } ${formatStatus(evaluateTemperature(sample.temperature).label)}`,
+        size: "xs",
+        color: "#111827",
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: `🩸ออกซิเจนในเลือด ${formatSampleValue(sample.spo2, "%")} ${formatStatus(evaluateSpo2(sample.spo2).label)}`,
+        size: "xs",
+        color: "#111827",
         wrap: true,
       },
     ],
@@ -668,83 +701,12 @@ function buildHealthFlexMessage(event: LineWebhookEvent, origin: string): LineFl
           },
           {
             type: "text",
-            text: report.aiSummary,
+            text: "ข้อมูลจากศูนย์ดูแลผู้สูงอายุ",
             wrap: true,
             size: "sm",
             color: "#475569",
           },
           ...timedVitalsBlocks,
-          {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            margin: "md",
-            paddingAll: "14px",
-            cornerRadius: "20px",
-            backgroundColor: "#F8FBFF",
-            contents: [
-              {
-                type: "box",
-                layout: "horizontal",
-                justifyContent: "space-between",
-                contents: [
-                  {
-                    type: "text",
-                    text: "ความดัน",
-                    size: "sm",
-                    color: "#64748B",
-                  },
-                  {
-                    type: "text",
-                    text: `${report.vitals.bloodPressure.value} ${report.vitals.bloodPressure.unit}`,
-                    size: "sm",
-                    weight: "bold",
-                    color: "#111827",
-                  },
-                ],
-              },
-              {
-                type: "box",
-                layout: "horizontal",
-                justifyContent: "space-between",
-                contents: [
-                  {
-                    type: "text",
-                    text: "ชีพจร",
-                    size: "sm",
-                    color: "#64748B",
-                  },
-                  {
-                    type: "text",
-                    text: `${report.vitals.heartRate.value} ${report.vitals.heartRate.unit}`,
-                    size: "sm",
-                    weight: "bold",
-                    color: "#111827",
-                  },
-                ],
-              },
-              {
-                type: "box",
-                layout: "horizontal",
-                justifyContent: "space-between",
-                contents: [
-                  {
-                    type: "text",
-                    text: "อุณหภูมิ",
-                    size: "sm",
-                    color: "#64748B",
-                  },
-                  {
-                    type: "text",
-                    text: `${report.vitals.temperature.value} ${report.vitals.temperature.unit}`,
-                    size: "sm",
-                    weight: "bold",
-                    color: "#111827",
-                  },
-                ],
-              },
-            ],
-          },
         ],
       },
       footer: {
@@ -771,7 +733,42 @@ function buildHealthFlexMessage(event: LineWebhookEvent, origin: string): LineFl
   return flexMessage;
 }
 
-async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
+function buildContextAwareFlexMessage(
+  event: LineWebhookEvent,
+  origin: string,
+  imageUrl?: string | null,
+): LineFlexMessage {
+  const message = {
+    id: event.message?.id ?? event.webhookEventId ?? randomUUID(),
+    text: event.message?.text ?? null,
+    type: event.message?.type ?? "text",
+    timestamp: event.timestamp ?? Date.now(),
+    userId: event.source?.userId ?? null,
+  };
+
+  const reportInput = {
+    ...message,
+    displayName: null,
+    groupId: event.source?.groupId ?? event.source?.roomId ?? null,
+  };
+
+  const report = buildHealthReport([reportInput]);
+  const timedSamples = extractTimedVitalsSamples([reportInput]);
+
+  return buildContextFlexMessage({
+    text: message.text ?? "",
+    report,
+    timedSamples,
+    reportUrl: getMiniAppReportUrl(origin, event),
+    imageUrl,
+  });
+}
+
+async function replyWithHealthCard(
+  event: LineWebhookEvent,
+  origin: string,
+  imageUrl?: string | null,
+) {
   if (!event.replyToken) {
     return;
   }
@@ -783,7 +780,7 @@ async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
     return;
   }
 
-  const flexMessage = buildHealthFlexMessage(event, origin);
+  const flexMessage = buildContextAwareFlexMessage(event, origin, imageUrl);
 
   const response = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
@@ -807,7 +804,11 @@ async function replyWithHealthCard(event: LineWebhookEvent, origin: string) {
   }
 }
 
-async function pushHealthCardToLineTarget(event: LineWebhookEvent, origin: string) {
+async function pushHealthCardToLineTarget(
+  event: LineWebhookEvent,
+  origin: string,
+  imageUrl?: string | null,
+) {
   const accessToken = getLineMessagingAccessToken();
   const targetId = getLineTargetId();
 
@@ -816,7 +817,7 @@ async function pushHealthCardToLineTarget(event: LineWebhookEvent, origin: strin
     return;
   }
 
-  const flexMessage = buildHealthFlexMessage(event, origin);
+  const flexMessage = buildContextAwareFlexMessage(event, origin, imageUrl);
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
@@ -864,6 +865,7 @@ export async function POST(request: NextRequest) {
   if (messageEvents.length > 0) {
     try {
       const uploadedContentByMessageId = new Map<string, UploadedLineContent>();
+      const uploadedImageUrlBySourceKey = new Map<string, string>();
       const lineIdentityBySourceKey = new Map<string, ResolvedLineIdentity>();
 
       for (const event of messageEvents) {
@@ -879,10 +881,12 @@ export async function POST(request: NextRequest) {
         }
 
         if (event.message?.type === "image" && event.message.id) {
-          uploadedContentByMessageId.set(
-            event.message.id,
-            await uploadLineImageContent(event.message.id),
-          );
+          const uploadedContent = await uploadLineImageContent(event.message.id);
+          uploadedContentByMessageId.set(event.message.id, uploadedContent);
+
+          if (uploadedContent.contentUrl) {
+            uploadedImageUrlBySourceKey.set(sourceKey, uploadedContent.contentUrl);
+          }
         }
       }
 
@@ -898,6 +902,7 @@ export async function POST(request: NextRequest) {
             event.source?.userId ?? "",
           ].join(":");
           const lineIdentity = lineIdentityBySourceKey.get(sourceKey);
+          const structuredFields = buildStructuredWebhookFields(event);
 
           return {
             messageId: event.message?.id ?? event.webhookEventId ?? randomUUID(),
@@ -906,6 +911,11 @@ export async function POST(request: NextRequest) {
             displayName: lineIdentity?.displayName ?? null,
             pictureUrl: lineIdentity?.pictureUrl ?? null,
             statusMessage: lineIdentity?.statusMessage ?? null,
+            context: structuredFields?.context ?? "other",
+            contexts: structuredFields?.contexts ?? ["other"],
+            parsed: (structuredFields?.parsed as any) ?? {},
+            flexTemplate: structuredFields?.flexTemplate ?? "plain_text",
+            confidence: structuredFields?.confidence ?? 0,
             source: "webhook",
             text: event.message?.type === "text" ? event.message.text ?? null : null,
             contentUrl: uploadedContent?.contentUrl ?? null,
@@ -940,33 +950,24 @@ export async function POST(request: NextRequest) {
       });
 
       for (const event of messageEvents) {
-        const messageId = event.message?.id ?? event.webhookEventId;
-        const structuredFields = buildStructuredWebhookFields(event);
+        const sourceKey = [
+          event.source?.type ?? "unknown",
+          event.source?.groupId ?? "",
+          event.source?.roomId ?? "",
+          event.source?.userId ?? "",
+        ].join(":");
+        const imageUrl =
+          (event.message?.id
+            ? uploadedContentByMessageId.get(event.message.id)?.contentUrl
+            : null) ?? uploadedImageUrlBySourceKey.get(sourceKey) ?? null;
 
-        if (!messageId || !structuredFields) {
-          continue;
-        }
-
-        await prisma.$executeRaw`
-          UPDATE "Message"
-          SET
-            "context" = ${structuredFields.context},
-            "contexts" = ${structuredFields.contexts},
-            "parsed" = ${structuredFields.parsed},
-            "flexTemplate" = ${structuredFields.flexTemplate},
-            "confidence" = ${structuredFields.confidence}
-          WHERE "messageId" = ${messageId}
-        `;
-      }
-
-      for (const event of messageEvents) {
         if (event.source?.type === "user") {
-          await replyWithHealthCard(event, request.nextUrl.origin);
+          await replyWithHealthCard(event, request.nextUrl.origin, imageUrl);
           continue;
         }
 
         if (event.source?.groupId || event.source?.roomId) {
-          await pushHealthCardToLineTarget(event, request.nextUrl.origin);
+          await pushHealthCardToLineTarget(event, request.nextUrl.origin, imageUrl);
         }
       }
     } catch (error) {

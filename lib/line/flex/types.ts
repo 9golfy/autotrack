@@ -45,6 +45,8 @@ export type FlexTemplateInput = {
   report: HealthReport;
   timedSamples: TimedVitalsSample[];
   reportUrl: string;
+  imageUrl?: string | null;
+  groupName?: string | null;
 };
 
 export type FlexBox = Record<string, unknown>;

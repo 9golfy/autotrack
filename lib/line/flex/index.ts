@@ -1,4 +1,5 @@
-import { buildBloodPressureFlex, buildHealthReportSummaryFlex } from "./blood-pressure";
+import { buildBloodPressureFlex } from "./blood-pressure";
+import { buildHealthReportFlex } from "./health-report";
 import { buildBillingFlex } from "./billing";
 import { detectLineFlexTemplateContext } from "./context";
 import { buildHeartRateFlex } from "./heart-rate";
@@ -57,7 +58,7 @@ export function buildContextFlexMessage(input: FlexTemplateInput): LineFlexMessa
     case "billing":
       return buildBillingFlex(input);
     case "healthReport":
-      return buildHealthReportSummaryFlex(input);
+      return buildHealthReportFlex(input);
     case "simpleText":
     default:
       return buildSimpleTextFlex(input);

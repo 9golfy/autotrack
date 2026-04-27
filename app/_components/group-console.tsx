@@ -29,7 +29,17 @@ export type MessageRecord = {
   type: string;
   timestamp: string;
   createdAt: string;
+  context?: string | null;
+  contexts?: string[] | null;
+  parsed?: unknown;
+  flexTemplate?: string | null;
+  confidence?: number | string | null;
+  importBatchId?: string | null;
   rawPayload?: {
+    parsed?: unknown;
+    context?: string | null;
+    contexts?: string[] | null;
+    flexTemplate?: string | null;
     lineIdentity?: {
       groupName?: string | null;
       error?: string | null;

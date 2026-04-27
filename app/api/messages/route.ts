@@ -8,6 +8,31 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type MessageRow = {
+  id: string;
+  messageId: string;
+  userId: string | null;
+  groupId: string | null;
+  displayName: string | null;
+  email: string | null;
+  statusMessage: string | null;
+  pictureUrl: string | null;
+  contentUrl: string | null;
+  contentMimeType: string | null;
+  source: string;
+  text: string | null;
+  type: string;
+  rawPayload: unknown;
+  timestamp: bigint | number | string;
+  createdAt: Date | string;
+  context: string | null;
+  contexts: string[] | null;
+  parsed: unknown;
+  flexTemplate: string | null;
+  confidence: unknown;
+  importBatchId: string | null;
+};
+
 export async function GET() {
   if (!hasValidDatabaseUrl()) {
     return NextResponse.json({
@@ -18,18 +43,41 @@ export async function GET() {
   }
 
   try {
-    const messages = await prisma.message.findMany({
-      orderBy: {
-        timestamp: "desc",
-      },
-      take: 200,
-    });
+    const messages = await prisma.$queryRaw<MessageRow[]>`
+      SELECT
+        "id",
+        "messageId",
+        "userId",
+        "groupId",
+        "displayName",
+        "email",
+        "statusMessage",
+        "pictureUrl",
+        "contentUrl",
+        "contentMimeType",
+        "source",
+        "text",
+        "type",
+        "rawPayload",
+        "timestamp",
+        "createdAt",
+        "context",
+        "contexts",
+        "parsed",
+        "flexTemplate",
+        "confidence",
+        "importBatchId"
+      FROM "Message"
+      ORDER BY "timestamp" DESC
+      LIMIT 500
+    `;
 
     return NextResponse.json(
       {
       messages: messages.map((message) => ({
         ...message,
         timestamp: message.timestamp.toString(),
+        confidence: message.confidence === null || message.confidence === undefined ? null : String(message.confidence),
       })),
       configured: true,
       },

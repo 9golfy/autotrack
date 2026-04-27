@@ -117,11 +117,17 @@ export function detectLineFlexTemplateContext(input: {
   text: string;
   hasTimedVitals: boolean;
 }): FlexTemplateContext {
+  // 1. ให้ความสำคัญสูงสุดกับ Health Report (ถ้ามีข้อมูลสัญญาณชีพหลายช่วงเวลา)
+  if (input.hasTimedVitals) {
+    return "healthReport";
+  }
+
+  // 2. ถ้าไม่มีข้อมูลหลายเวลา ค่อยแยกตามประเภทคำสำคัญ
   for (const entry of FLEX_PATTERNS) {
     if (entry.pattern.test(input.text)) {
       return entry.context;
     }
   }
 
-  return input.hasTimedVitals ? "healthReport" : "simpleText";
+  return "simpleText";
 }

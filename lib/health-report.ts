@@ -1,3 +1,14 @@
+import {
+  evaluateBloodPressure,
+  evaluateHeartRate,
+  evaluateSpo2,
+  evaluateTemperature,
+  getOverallHealthSeverity,
+  healthSeverityToStatusLabel,
+  healthSeverityToTone,
+  type HealthSeverity,
+} from "@/lib/health-thresholds";
+
 type HealthMessageInput = {
   id: string;
   text?: string | null;
@@ -11,13 +22,13 @@ type HealthMessageInput = {
   groupName?: string | null;
 };
 
-type Severity = "normal" | "watch" | "critical";
+type Severity = HealthSeverity;
 
 type VitalMetric = {
   value: string;
   unit: string;
   tone: "green" | "orange" | "red";
-  statusLabel: "ปกติ" | "เฝ้าระวัง" | "เสี่ยง";
+  statusLabel: "เหมาะสม" | "ปกติ" | "สูงกว่าปกติ" | "เฝ้าระวัง" | "อันตราย" | "ไม่มีข้อมูล";
   explanation: string;
 };
 
@@ -83,7 +94,7 @@ export type HealthReport = {
   groupName: string;
   dateLabel: string;
   ageLabel: string;
-  statusLabel: "ปกติ" | "เฝ้าระวัง" | "เสี่ยง";
+  statusLabel: "ปกติ" | "เฝ้าระวัง" | "อันตราย";
   statusTone: "green" | "orange" | "red";
   aiSummary: string;
   vitals: {
@@ -143,124 +154,62 @@ function getBucketLabel(hour: number): TimeBucketLabel {
   return "Night";
 }
 
-function severityToStatusLabel(severity: Severity): "ปกติ" | "เฝ้าระวัง" | "เสี่ยง" {
-  if (severity === "critical") {
-    return "เสี่ยง";
-  }
-
-  if (severity === "watch") {
-    return "เฝ้าระวัง";
-  }
-
-  return "ปกติ";
-}
-
-function severityToTone(severity: Severity): "green" | "orange" | "red" {
-  if (severity === "critical") {
-    return "red";
-  }
-
-  if (severity === "watch") {
-    return "orange";
-  }
-
-  return "green";
-}
-
 function getBloodPressureInterpretation(vitals: ParsedVitals): VitalMetric {
-  const isCritical = vitals.systolic > 160 || vitals.diastolic > 95;
-  const severity: Severity = isCritical ? "critical" : "normal";
+  const result = evaluateBloodPressure(vitals.systolic, vitals.diastolic);
 
   return {
     value: `${vitals.systolic}/${vitals.diastolic}`,
     unit: "mmHg",
-    tone: severityToTone(severity),
-    statusLabel: severityToStatusLabel(severity),
-    explanation: isCritical
-      ? "ค่าความดันสูงกว่ามาตรฐานของผู้สูงอายุ"
-      : "อยู่ในเกณฑ์ปกติสำหรับผู้สูงอายุ (70+)",
+    tone: healthSeverityToTone(result.severity),
+    statusLabel: result.label,
+    explanation: result.explanation,
   };
 }
 
 function getHeartRateInterpretation(vitals: ParsedVitals): VitalMetric {
-  let severity: Severity = "normal";
-
-  if (vitals.heartRate < 50 || vitals.heartRate > 110) {
-    severity = "critical";
-  } else if (vitals.heartRate < 60 || vitals.heartRate > 100) {
-    severity = "watch";
-  }
+  const result = evaluateHeartRate(vitals.heartRate);
 
   return {
     value: `${vitals.heartRate}`,
     unit: "bpm",
-    tone: severityToTone(severity),
-    statusLabel: severityToStatusLabel(severity),
-    explanation:
-      severity === "critical"
-        ? "ชีพจรอยู่นอกช่วงที่ควรติดตามในผู้สูงอายุ"
-        : severity === "watch"
-          ? "ชีพจรเริ่มเบี่ยงจากช่วงปกติ ควรวัดซ้ำ"
-          : "ชีพจรอยู่ในช่วงที่เหมาะสมสำหรับผู้สูงอายุ",
+    tone: healthSeverityToTone(result.severity),
+    statusLabel: result.label,
+    explanation: result.explanation,
   };
 }
 
 function getTemperatureInterpretation(vitals: ParsedVitals): VitalMetric {
-  let severity: Severity = "normal";
-
-  if (vitals.temperature >= 38) {
-    severity = "critical";
-  } else if (vitals.temperature >= 37.5) {
-    severity = "watch";
-  }
+  const result = evaluateTemperature(vitals.temperature);
 
   return {
     value: `${vitals.temperature.toFixed(1)}`,
     unit: "°C",
-    tone: severityToTone(severity),
-    statusLabel: severityToStatusLabel(severity),
-    explanation:
-      severity === "critical"
-        ? "อุณหภูมิสูงเกินเกณฑ์และอาจมีไข้"
-        : severity === "watch"
-          ? "อุณหภูมิสูงกว่าปกติเล็กน้อย ควรสังเกตอาการ"
-          : "อุณหภูมิอยู่ในช่วงปกติ",
+    tone: healthSeverityToTone(result.severity),
+    statusLabel: result.label,
+    explanation: result.explanation,
   };
 }
 
 function getSpO2Interpretation(vitals: ParsedVitals): VitalMetric {
-  let severity: Severity = "normal";
-
-  if (vitals.spo2 < 92) {
-    severity = "critical";
-  } else if (vitals.spo2 < 95) {
-    severity = "watch";
-  }
+  const result = evaluateSpo2(vitals.spo2);
 
   return {
     value: `${vitals.spo2}`,
     unit: "%",
-    tone: severityToTone(severity),
-    statusLabel: severityToStatusLabel(severity),
-    explanation:
-      severity === "critical"
-        ? "ค่าออกซิเจนต่ำกว่าระดับที่ปลอดภัย"
-        : severity === "watch"
-          ? "ค่าออกซิเจนเริ่มต่ำ ควรติดตามซ้ำ"
-          : "ค่าออกซิเจนอยู่ในช่วงที่ปลอดภัย",
+    tone: healthSeverityToTone(result.severity),
+    statusLabel: result.label,
+    explanation: result.explanation,
   };
 }
 
 function getOverallSeverity(metrics: VitalMetric[]): Severity {
-  if (metrics.some((metric) => metric.statusLabel === "เสี่ยง")) {
-    return "critical";
-  }
-
-  if (metrics.some((metric) => metric.statusLabel === "เฝ้าระวัง")) {
-    return "watch";
-  }
-
-  return "normal";
+  return getOverallHealthSeverity(
+    metrics.map((metric) => ({
+      label: metric.statusLabel,
+      severity: metric.tone === "red" ? "danger" : metric.tone === "orange" ? "watch" : "normal",
+      explanation: metric.explanation,
+    })),
+  );
 }
 
 function parseRespiratoryRate(text: string | null | undefined) {
@@ -501,7 +450,7 @@ function createAiSummary(
   groupName: string,
   reporterName: string,
 ) {
-  if (severity === "critical") {
+  if (severity === "danger") {
     return `รายงานจาก ${groupName} โดย ${reporterName} มีค่าที่ต้องเฝ้าระวังทันที โดยเฉพาะความดัน ${vitals.systolic}/${vitals.diastolic} mmHg และค่า SpO2 ${vitals.spo2}%`;
   }
 
@@ -555,8 +504,8 @@ export function buildHealthReport(messages: HealthMessageInput[]): HealthReport 
   const temperature = getTemperatureInterpretation(latestVitals);
   const spo2 = getSpO2Interpretation(latestVitals);
   const overallSeverity = getOverallSeverity([bloodPressure, heartRate, temperature, spo2]);
-  const statusLabel = severityToStatusLabel(overallSeverity);
-  const statusTone = severityToTone(overallSeverity);
+  const statusLabel = healthSeverityToStatusLabel(overallSeverity);
+  const statusTone = healthSeverityToTone(overallSeverity);
 
   const keywordTags = HEALTH_KEYWORDS.filter((keyword) =>
     sortedMessages.some((message) => (message.text ?? "").includes(keyword)),
