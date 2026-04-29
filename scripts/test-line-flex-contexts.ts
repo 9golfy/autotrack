@@ -70,7 +70,9 @@ async function main() {
   console.log(`📱 Target ID: ${process.env.LINE_TARGET_ID}`);
   if (targetContext) console.log(`🎯 Filtering for context: ${targetContext}`);
 
-  const oneDayAgo = BigInt(Date.now() - 24 * 60 * 60 * 1000);
+  // ปรับให้ดึงข้อมูลจากต้นเดือนปัจจุบันแทนการดึงแค่ 24 ชั่วโมง
+  const now = new Date();
+  const startOfMonth = BigInt(new Date(now.getFullYear(), now.getMonth(), 1).getTime());
   const allContexts = ["meal", "medication", "bloodPressure", "heartRate", "spo2", "temperature", "billing", "healthReport", "simpleText"];
   
   // เตรียม Map สำหรับเก็บข้อมูลที่จะใช้ทดสอบ
@@ -79,7 +81,7 @@ async function main() {
   const realMessages = await prisma.message.findMany({
     where: {
       timestamp: {
-        gt: oneDayAgo,
+        gt: startOfMonth,
       },
       source: "webhook", // กรองเอาเฉพาะข้อมูลที่ส่งมาจาก LINE จริงๆ
       text: { not: null },
@@ -139,7 +141,7 @@ async function main() {
       text: data.text ?? "",
       report,
       timedSamples,
-      reportUrl: `https://autotrack-phi.vercel.app/mini-app?groupId=${data.input.groupId ?? "unknown"}`,
+      reportUrl: `https://autotrack-phi.vercel.app/mini-app?groupId=${data.input.groupId ?? process.env.LINE_TARGET_ID}`,
       imageUrl: data.imageUrl,
     });
 

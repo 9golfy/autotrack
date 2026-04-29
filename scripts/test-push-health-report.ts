@@ -27,14 +27,16 @@ import { prisma } from "../lib/prisma";
  * วิธีรัน: npx tsx scripts/test-push-health-report.ts
  */
 async function testPushHealthReport() {
-  const accessToken = process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-  // ใช้ ID ที่คุณแจ้งมาเป็นค่าเริ่มต้นกรณีใน .env ไม่ได้ระบุ
-  const targetId = process.env.LINE_TARGET_ID || "Udcfa6d2df22e88ab744a94132e0bb08b"; 
-  const dbRecordId = "cmogh0akm0000l504r4ctp7iq"; // ID จริงที่คุณต้องการใช้
+  const { 
+    LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: accessToken,
+    LINE_TARGET_ID: envTargetId 
+  } = process.env;
 
-  if (!accessToken || !targetId) {
-    console.error("❌ ไม่พบ API Token หรือ Target ID");
-    console.log(`Current Target ID: ${targetId}`);
+  const targetId = envTargetId || "Udcfa6d2df22e88ab744a94132e0bb08b";
+  const dbRecordId = "cmogh0akm0000l504r4ctp7iq";
+
+  if (!accessToken) {
+    console.error("❌ ไม่พบ API Token ใน .env");
     return;
   }
 
@@ -49,35 +51,31 @@ async function testPushHealthReport() {
     return;
   }
 
-  const mockMessage = {
+  const inputData = {
     id: dbMessage.id,
     messageId: dbMessage.messageId,
     text: dbMessage.text,
     type: dbMessage.type,
     timestamp: Number(dbMessage.timestamp),
     displayName: dbMessage.displayName || "เจ้าหน้าที่ดูแล",
-    userId: dbMessage.userId || "U8a8983d9d1eaeb1266ca734868bfd42b", 
-    groupId: targetId, // ใช้ targetId ที่กำหนดจาก .env หรือ fallback
-    groupName: "ศูนย์ดูแลบ้านแสนสุข (ชื่อกลุ่มทดสอบ)", // Hardcode สำหรับการทดสอบ
+    userId: dbMessage.userId,
+    groupId: dbMessage.groupId || targetId,
+    groupName: "ศูนย์ดูแลบ้านแสนสุข (ชื่อกลุ่มทดสอบ)", 
   };
 
-  // 2. แปลงข้อความเป็น Data Object (HealthReport) โดยใช้ Logic เดียวกับระบบจริง
-  const report = buildHealthReport([mockMessage]);
-  const timedSamples = extractTimedVitalsSamples([mockMessage]);
+  const report = buildHealthReport([inputData]);
+  const timedSamples = extractTimedVitalsSamples([inputData]);
 
-  // 3. สร้าง Flex Message JSON
   const flexMessage = buildContextFlexMessage({
     text: dbMessage.text,
     report,
     timedSamples,
     reportUrl: `https://autotrack-phi.vercel.app/mini-app?groupId=${targetId}`, 
-    groupName: mockMessage.groupName, // ส่งชื่อกลุ่มเข้าไปเพื่อให้แสดงผลใน Flex Message
+    groupName: inputData.groupName,
   });
 
-  console.log(`🚀 Sending Push Message to: ${targetId} (${targetId.startsWith('U') ? 'User' : 'Group'})`);
-  console.log(`📝 Group Name Display: ${mockMessage.groupName}`);
+  console.log(`🚀 Sending Push to: ${targetId}`);
 
-  // 4. ส่งไปยัง LINE API โดยใช้ฟังก์ชันส่งที่มีคุณภาพ
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {

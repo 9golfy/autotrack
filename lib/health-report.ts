@@ -52,12 +52,13 @@ type CriteriaReference = {
   detail: string;
 };
 
-type TimeBucketLabel = "Morning" | "Afternoon" | "Evening" | "Night";
+type TimeBucketLabel = string;
 
 type HealthSeriesPoint = {
   label: TimeBucketLabel;
   heartRate: number;
   systolic: number;
+  diastolic: number;
   temperature: number;
 };
 
@@ -109,6 +110,7 @@ export type HealthReport = {
   evidence: EvidenceEntry[];
   criteriaReference: CriteriaReference[];
   series: HealthSeriesPoint[];
+  availableDates: string[];
 };
 
 const DEFAULT_VITALS: ParsedVitals = {
@@ -522,15 +524,52 @@ export function buildHealthReport(messages: HealthMessageInput[]): HealthReport 
     }
   }
 
-  const bucketMap = new Map<TimeBucketLabel, ParsedVitals>();
-  const initialSeriesOrder: TimeBucketLabel[] = ["Morning", "Afternoon", "Evening", "Night"];
+  const bucketMap = new Map<string, ParsedVitals>();
+  
+  // ตรวจสอบว่าข้อมูลครอบคลุมหลายวันหรือไม่ (สำหรับรองรับ Monthly view ในหน้ากราฟ)
+  const timestamps = sortedMessages.map(m => m.timestamp ?? 0).filter(t => t > 0);
+  const isMultiDay = timestamps.length > 0 && 
+    (Math.max(...timestamps) - Math.min(...timestamps)) > 24 * 60 * 60 * 1000;
+
+  // ดึงรายการวันที่ทั้งหมดที่มีข้อมูลเพื่อใช้ใน Dropdown บนหน้า UI
+  const availableDates = Array.from(new Set(
+    sortedMessages.map(m => {
+      const d = new Date(m.timestamp ?? Date.now());
+      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+    })
+  )).sort();
+
+  let initialSeriesOrder: string[] = [];
+
+  if (isMultiDay) {
+    // สร้างชุดวันที่ไม่ซ้ำกันจากข้อความที่มี (รูปแบบ DD/MM)
+    // เรียงลำดับตามวันเวลาจริง (Chronological Order)
+    const dateWithTime = sortedMessages.map(m => {
+      const d = new Date(m.timestamp ?? Date.now());
+      return {
+        label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+        ts: d.getTime()
+      };
+    });
+    
+    initialSeriesOrder = Array.from(new Set(dateWithTime.map(d => d.label)))
+      .sort((a, b) => {
+        const timeA = dateWithTime.find(d => d.label === a)?.ts ?? 0;
+        const timeB = dateWithTime.find(d => d.label === b)?.ts ?? 0;
+        return timeA - timeB;
+      });
+  } else {
+    initialSeriesOrder = ["Morning", "Afternoon", "Evening", "Night"];
+  }
 
   initialSeriesOrder.forEach((bucket) => bucketMap.set(bucket, latestVitals));
 
   for (const message of [...sortedMessages].reverse()) {
-    const messageTime = message.timestamp ?? Date.now();
-    const hour = new Date(messageTime).getHours();
-    const bucket = getBucketLabel(hour);
+    const d = new Date(message.timestamp ?? Date.now());
+    const bucket = isMultiDay 
+      ? `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
+      : getBucketLabel(d.getHours());
+
     const parsed = parseHealthVitals(message.text);
     bucketMap.set(bucket, mergeVitals(bucketMap.get(bucket) ?? latestVitals, parsed));
   }
@@ -542,6 +581,7 @@ export function buildHealthReport(messages: HealthMessageInput[]): HealthReport 
       label,
       heartRate: bucketVitals.heartRate,
       systolic: bucketVitals.systolic,
+      diastolic: bucketVitals.diastolic,
       temperature: bucketVitals.temperature,
     };
   });
@@ -653,5 +693,6 @@ export function buildHealthReport(messages: HealthMessageInput[]): HealthReport 
       },
     ],
     series,
+    availableDates,
   };
 }

@@ -174,9 +174,8 @@ function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]): FlexBox[] {
             },
             {
               type: "text",
-              text: `แนวโน้ม: ${
-                bpEval.severity === "normal" ? "อยู่ในเกณฑ์ปกติ" : "ควรติดตามอย่างใกล้ชิด"
-              }`,
+              text: `แนวโน้ม: ${bpEval.severity === "normal" ? "อยู่ในเกณฑ์ปกติ" : "ควรติดตามอย่างใกล้ชิด"
+                }`,
               size: "xs",
               weight: "bold",
               color: bpEval.severity === "normal" ? "#16A34A" : "#F97316",
@@ -212,7 +211,7 @@ export function buildHealthReportFlex(input: FlexTemplateInput): LineFlexMessage
             contents: [
               {
                 type: "image",
-                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_aun.png",
+                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lo_report.png",
                 size: "xxs",
                 flex: 0,
               },
@@ -263,7 +262,7 @@ export function buildHealthReportFlex(input: FlexTemplateInput): LineFlexMessage
             contents: [
               {
                 type: "image",
-                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_trend.png",
+                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_trend.pnghttps://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lo_graph.png",
                 size: "xxs",
                 flex: 0,
               },

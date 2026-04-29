@@ -462,10 +462,12 @@ export function useAutoTrackMessages() {
               : "ยังไม่มีข้อมูลจากกลุ่ม",
         );
       } catch (loadError) {
-        console.error(loadError);
-        if (isMounted) {
-          setError("ไม่สามารถโหลดข้อมูลกลุ่ม LINE ได้ในขณะนี้");
+        if (!isMounted) {
+          return;
         }
+
+        console.warn("Unable to refresh LINE messages", loadError);
+        setError((currentError) => currentError ?? "ไม่สามารถโหลดข้อมูลกลุ่ม LINE ได้ในขณะนี้");
       }
     }
 
