@@ -352,12 +352,13 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
         }>(`/v2/bot/group/${groupId}/member/${userId}`),
         fetchLineApiJson<{
           groupName?: string;
+          pictureUrl?: string;
         }>(`/v2/bot/group/${groupId}/summary`),
       ]);
 
       return {
         displayName: memberProfile.displayName ?? null,
-        pictureUrl: memberProfile.pictureUrl ?? null,
+        pictureUrl: groupSummary.pictureUrl ?? null,
         statusMessage: memberProfile.statusMessage ?? null,
         groupName: groupSummary.groupName ?? null,
         error: null,
