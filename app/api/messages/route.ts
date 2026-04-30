@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 
 import { getDatabaseSetupMessage, hasValidDatabaseUrl } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { rewriteStoragePublicUrl } from "@/lib/supabase/storage-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,9 @@ type MessageRow = {
   importBatchId: string | null;
 };
 
-const PRIVATE_LIST_CACHE = "private, max-age=30, stale-while-revalidate=120";
+const PRIVATE_LIST_CACHE = "private, no-store, max-age=0";
+const DEFAULT_MESSAGE_LIMIT = 500;
+const MAX_MESSAGE_LIMIT = 500;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -62,10 +65,10 @@ function buildLeanRawPayload(message: MessageRow) {
       : null,
     mediaUpload: mediaUpload
       ? {
-          publicUrl: asString(mediaUpload.publicUrl) ?? asString(mediaUpload.mediaUrl) ?? asString(mediaUpload.url),
-          url: asString(mediaUpload.url) ?? asString(mediaUpload.publicUrl) ?? asString(mediaUpload.mediaUrl),
-          mediaUrl: asString(mediaUpload.mediaUrl) ?? asString(mediaUpload.publicUrl) ?? asString(mediaUpload.url),
-          thumbnailUrl: asString(mediaUpload.thumbnailUrl),
+          publicUrl: rewriteStoragePublicUrl(asString(mediaUpload.publicUrl) ?? asString(mediaUpload.mediaUrl) ?? asString(mediaUpload.url)),
+          url: rewriteStoragePublicUrl(asString(mediaUpload.url) ?? asString(mediaUpload.publicUrl) ?? asString(mediaUpload.mediaUrl)),
+          mediaUrl: rewriteStoragePublicUrl(asString(mediaUpload.mediaUrl) ?? asString(mediaUpload.publicUrl) ?? asString(mediaUpload.url)),
+          thumbnailUrl: rewriteStoragePublicUrl(asString(mediaUpload.thumbnailUrl)),
           mediaType: asString(mediaUpload.mediaType) ?? asString(mediaUpload.type),
           contentType: asString(mediaUpload.contentType) ?? asString(mediaUpload.contentMimeType),
           contentMimeType: asString(mediaUpload.contentMimeType) ?? asString(mediaUpload.contentType),
@@ -77,7 +80,8 @@ function buildLeanRawPayload(message: MessageRow) {
 
 function toPublicMessage(message: MessageRow) {
   const rawPayload = buildLeanRawPayload(message);
-  const mediaUrl = rawPayload.mediaUpload?.mediaUrl ?? message.contentUrl;
+  const contentUrl = rewriteStoragePublicUrl(message.contentUrl);
+  const mediaUrl = rawPayload.mediaUpload?.mediaUrl ?? contentUrl;
   const mediaType =
     rawPayload.mediaUpload?.mediaType ??
     (message.contentMimeType?.startsWith("image/")
@@ -97,7 +101,7 @@ function toPublicMessage(message: MessageRow) {
     email: null,
     statusMessage: null,
     pictureUrl: message.pictureUrl,
-    contentUrl: message.contentUrl,
+    contentUrl,
     contentMimeType: message.contentMimeType,
     mediaUrl,
     thumbnailUrl: rawPayload.mediaUpload?.thumbnailUrl ?? (mediaType === "image" ? mediaUrl : null),
@@ -117,7 +121,36 @@ function toPublicMessage(message: MessageRow) {
   };
 }
 
-export async function GET() {
+function getMessageLimit(value: string | null) {
+  const limit = Number(value);
+
+  if (!Number.isFinite(limit)) {
+    return DEFAULT_MESSAGE_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_MESSAGE_LIMIT);
+}
+
+function getTimestampBoundary(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = Number(value);
+
+  if (!Number.isFinite(timestamp) || timestamp < 0) {
+    return null;
+  }
+
+  return BigInt(Math.trunc(timestamp));
+}
+
+export async function GET(request: NextRequest) {
+  const groupId = request.nextUrl.searchParams.get("groupId")?.trim() || null;
+  const limit = getMessageLimit(request.nextUrl.searchParams.get("limit"));
+  const fromTimestamp = getTimestampBoundary(request.nextUrl.searchParams.get("from"));
+  const toTimestamp = getTimestampBoundary(request.nextUrl.searchParams.get("to"));
+
   if (!hasValidDatabaseUrl()) {
     return NextResponse.json(
       {
@@ -173,8 +206,11 @@ export async function GET() {
         "confidence",
         "importBatchId"
       FROM "Message"
+      WHERE (${groupId}::text IS NULL OR "groupId" = ${groupId})
+        AND (${fromTimestamp}::bigint IS NULL OR "timestamp" >= ${fromTimestamp}::bigint)
+        AND (${toTimestamp}::bigint IS NULL OR "timestamp" < ${toTimestamp}::bigint)
       ORDER BY "timestamp" DESC
-      LIMIT 500
+      LIMIT ${limit}
     `;
 
     const publicMessages = messages.map(toPublicMessage);
@@ -185,6 +221,11 @@ export async function GET() {
       itemCount: publicMessages.length,
       rawPayloadIncluded: false,
       mediaCount,
+      filteredByGroup: Boolean(groupId),
+      filteredByDate: Boolean(fromTimestamp || toTimestamp),
+      fromTimestamp: fromTimestamp?.toString() ?? null,
+      toTimestamp: toTimestamp?.toString() ?? null,
+      limit,
       timestamp: new Date().toISOString(),
     });
 

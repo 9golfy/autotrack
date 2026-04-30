@@ -736,6 +736,108 @@ function formatThaiDobWithAge(isoDate: string): string {
   return `${Number(d)} ${months[Number(m) - 1]} ${Number(y) + 543} (${age} ปี)`;
 }
 
+const THAI_MONTHS_LONG = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+] as const;
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function parseIsoDobParts(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const fallback = { year: 1950, month: 3, day: 12 };
+
+  if (!match) {
+    return fallback;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const maxDay = getDaysInMonth(year, month);
+  const day = Math.min(Math.max(Number(match[3]), 1), maxDay);
+
+  return { year, month, day };
+}
+
+function formatIsoDobValue(year: number, month: number, day: number) {
+  const safeDay = Math.min(day, getDaysInMonth(year, month));
+  return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function EditDOBBottomSheet({
+  open,
+  value,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const dobParts = useMemo(() => parseIsoDobParts(value), [value]);
+  const daysInDobMonth = useMemo(() => getDaysInMonth(dobParts.year, dobParts.month), [dobParts.month, dobParts.year]);
+  const dobDayOptions = useMemo(() => Array.from({ length: daysInDobMonth }, (_, index) => index + 1), [daysInDobMonth]);
+  const dobYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 121 }, (_, index) => currentYear - index);
+  }, []);
+
+  if (!open) return null;
+
+  const handleDobChange = (nextParts: Partial<typeof dobParts>) => {
+    const nextDob = { ...dobParts, ...nextParts };
+    onChange(formatIsoDobValue(nextDob.year, nextDob.month, nextDob.day));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/40 px-3 pb-3" onClick={onClose}>
+      <section className="w-full rounded-[22px] bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[#CBD5E1]" />
+        <h2 className="text-xl font-bold text-[#082B5F]">แก้ไขวันเกิด</h2>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <label className="min-w-0">
+            <span className="mb-1 block text-sm font-semibold text-[#475569]">วันที่</span>
+            <select className="h-[52px] w-full rounded-[14px] border border-[#D7E6F8] bg-white px-3 text-base font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none" value={dobParts.day} onChange={(event) => handleDobChange({ day: Number(event.target.value) })}>
+              {dobDayOptions.map((day) => <option key={day} value={day}>{day}</option>)}
+            </select>
+          </label>
+          <label className="min-w-0">
+            <span className="mb-1 block text-sm font-semibold text-[#475569]">เดือน</span>
+            <select className="h-[52px] w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 text-base font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none" value={dobParts.month} onChange={(event) => handleDobChange({ month: Number(event.target.value) })}>
+              {THAI_MONTHS_LONG.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
+            </select>
+          </label>
+          <label className="min-w-0">
+            <span className="mb-1 block text-sm font-semibold text-[#475569]">ปี</span>
+            <select className="h-[52px] w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 text-base font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none" value={dobParts.year} onChange={(event) => handleDobChange({ year: Number(event.target.value) })}>
+              {dobYearOptions.map((year) => <option key={year} value={year}>{year + 543}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="mt-5 flex gap-3">
+          <button type="button" onClick={onClose} className="h-[52px] flex-1 rounded-[14px] border border-[#CBD5E1] bg-white text-base font-semibold text-[#082B5F]">ยกเลิก</button>
+          <button type="button" onClick={onSave} className="h-[52px] flex-1 rounded-[14px] bg-[#1976D2] text-base font-bold text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)]">บันทึก</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = null }: MiniAppIndexProps) {
   const searchParams = useSearchParams();
   const selectedGroupId =
@@ -783,14 +885,18 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
 
   // วันเกิด/อายุ (เหมือนรายงาน)
   const [patientDob, setPatientDob] = useState("1950-03-12");
+  const [draftDob, setDraftDob] = useState("1950-03-12");
   const [isEditOpen, setIsEditOpen] = useState(false);
   useEffect(() => {
     const storedDob = window.localStorage.getItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`);
-    if (storedDob) setPatientDob(storedDob);
+    if (storedDob) {
+      setPatientDob(storedDob);
+      setDraftDob(storedDob);
+    }
   }, [selectedGroupId]);
-  function handleSaveDob(newDob: string) {
-    setPatientDob(newDob);
-    window.localStorage.setItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`, newDob);
+  function handleSaveDob() {
+    setPatientDob(draftDob);
+    window.localStorage.setItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`, draftDob);
     setIsEditOpen(false);
   }
 
@@ -814,10 +920,11 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
             avatarUrl={avatarUrl}
             isAvatarLoading={isLineGroupPictureLoading}
             dobLabel={formatThaiDobWithAge(patientDob)}
-            onEditDob={() => setIsEditOpen(true)}
+            onEditDob={() => {
+              setDraftDob(patientDob);
+              setIsEditOpen(true);
+            }}
           />
-
-          {/* TODO: เพิ่ม EditDOBBottomSheet เหมือนรายงาน ถ้าต้องการให้แก้ไขวันเกิดได้ */}
 
           <MiniAppHomeAlertCard />
           <h2 className="mb-2 mt-0 px-1 text-sm font-bold text-[#082B5F]">ข้อมูลสุขภาพล่าสุดวันนี้</h2>
@@ -825,6 +932,7 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
         </div>
 
         <BottomBar active="home" groupId={selectedGroupId} />
+        <EditDOBBottomSheet open={isEditOpen} value={draftDob} onChange={setDraftDob} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} />
       </div>
     </main>
   );

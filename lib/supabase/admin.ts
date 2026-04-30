@@ -1,8 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { StorageClient } from "@supabase/storage-js";
+
+import { getStorageRestEndpoint } from "@/lib/supabase/storage-url";
 
 let supabaseAdminClient:
   | ReturnType<typeof createClient>
   | null = null;
+let supabaseStorageClient: StorageClient | null = null;
 
 export function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -22,4 +26,22 @@ export function getSupabaseAdminClient() {
   }
 
   return supabaseAdminClient;
+}
+
+export function getSupabaseStorageClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const storageEndpoint = getStorageRestEndpoint();
+
+  if (!storageEndpoint || !serviceRoleKey) {
+    throw new Error("Missing SUPABASE_STORAGE_ENDPOINT or SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  if (!supabaseStorageClient) {
+    supabaseStorageClient = new StorageClient(storageEndpoint, {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+    });
+  }
+
+  return supabaseStorageClient;
 }

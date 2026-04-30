@@ -8,13 +8,18 @@ import {
 import type { TimedVitalsSample } from "@/lib/health-report";
 import { statusStyles } from "./shared";
 import type { FlexBox, FlexTemplateInput, LineFlexMessage } from "./types";
+import { buildStoragePublicUrl } from "@/lib/supabase/storage-url";
+
+function lineMediaUrl(path: string) {
+  return buildStoragePublicUrl(`line-webhook/${path}`, "line-media") ?? path;
+}
 
 const METRIC_ICONS = {
-  bp: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lo_bp.png",
-  heart: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lo_heart.png",
-  lung: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_lung.png",
-  temp: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_term.png",
-  spo2: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_spo2.png",
+  bp: lineMediaUrl("lo_bp.png"),
+  heart: lineMediaUrl("lo_heart.png"),
+  lung: lineMediaUrl("lc_lung.png"),
+  temp: lineMediaUrl("lc_term.png"),
+  spo2: lineMediaUrl("lc_spo2.png"),
 };
 
 function getMetricBadge(label: string, tone: "green" | "orange" | "red"): FlexBox {
@@ -88,8 +93,8 @@ function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]): FlexBox[] {
 
     const isNight = sample.hour >= 20 || sample.hour < 8;
     const timeIcon = isNight
-      ? "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_moon.png"
-      : "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_aun.png";
+      ? lineMediaUrl("lc_moon.png")
+      : lineMediaUrl("lc_aun.png");
 
     return {
       type: "box",
@@ -168,7 +173,7 @@ function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]): FlexBox[] {
           contents: [
             {
               type: "image",
-              url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_trend.png",
+                url: lineMediaUrl("lc_trend.png"),
               size: "xxs",
               flex: 0,
             },
@@ -211,7 +216,7 @@ export function buildHealthReportFlex(input: FlexTemplateInput): LineFlexMessage
             contents: [
               {
                 type: "image",
-                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lo_report.png",
+                url: lineMediaUrl("lo_report.png"),
                 size: "xxs",
                 flex: 0,
               },
@@ -262,7 +267,7 @@ export function buildHealthReportFlex(input: FlexTemplateInput): LineFlexMessage
             contents: [
               {
                 type: "image",
-                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lc_trend.pnghttps://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/lo_graph.png",
+                url: lineMediaUrl("lo_graph.png"),
                 size: "xxs",
                 flex: 0,
               },
@@ -286,7 +291,7 @@ export function buildHealthReportFlex(input: FlexTemplateInput): LineFlexMessage
               },
               {
                 type: "image",
-                url: "https://plyczwoijpcnahvsuxxe.supabase.co/storage/v1/object/public/line-media/line-webhook/nurse.png",
+                url: lineMediaUrl("nurse.png"),
                 size: "sm",
                 flex: 0,
               },

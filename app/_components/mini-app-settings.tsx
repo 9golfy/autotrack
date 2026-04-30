@@ -41,6 +41,44 @@ const categoryOptions: { key: ReportCategoryKey; label: string; description: str
   { key: "other", label: "ข้อมูลด้านอื่นๆ", description: "เปิดพื้นที่สำหรับข้อมูลเสริมจากผู้ดูแล" },
 ];
 
+const THAI_MONTHS = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+] as const;
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function parseDobParts(value: string) {
+  const [rawYear, rawMonth, rawDay] = value.split("-").map(Number);
+  const [fallbackYear, fallbackMonth, fallbackDay] = defaultSettings.patientDob.split("-").map(Number);
+  const year = Number.isFinite(rawYear) ? rawYear : fallbackYear;
+  const month = Number.isFinite(rawMonth) ? rawMonth : fallbackMonth;
+  const maxDay = getDaysInMonth(year, month);
+  const day = Number.isFinite(rawDay) ? Math.min(Math.max(rawDay, 1), maxDay) : fallbackDay;
+
+  return { year, month, day };
+}
+
+function formatDobValue(year: number, month: number, day: number) {
+  const safeDay = Math.min(day, getDaysInMonth(year, month));
+  const monthText = String(month).padStart(2, "0");
+  const dayText = String(safeDay).padStart(2, "0");
+
+  return `${year}-${monthText}-${dayText}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -84,6 +122,13 @@ export function MiniAppSettings({ selectedGroupId }: MiniAppSettingsProps) {
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
   const [isEditingDob, setIsEditingDob] = useState(false);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
+  const dobParts = useMemo(() => parseDobParts(settings.patientDob), [settings.patientDob]);
+  const daysInDobMonth = useMemo(() => getDaysInMonth(dobParts.year, dobParts.month), [dobParts.month, dobParts.year]);
+  const dobDayOptions = useMemo(() => Array.from({ length: daysInDobMonth }, (_, index) => index + 1), [daysInDobMonth]);
+  const dobYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 121 }, (_, index) => currentYear - index);
+  }, []);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(`mini-app-settings:${resolvedGroupId}`);
@@ -107,6 +152,14 @@ export function MiniAppSettings({ selectedGroupId }: MiniAppSettingsProps) {
     setSavedLabel("บันทึกการตั้งค่าแล้ว");
     window.setTimeout(() => setSavedLabel(null), 1600);
     // TODO: Persist settings to Supabase when the mini app settings table is available.
+  }
+
+  function updateDob(partialDob: Partial<typeof dobParts>) {
+    const nextDob = { ...dobParts, ...partialDob };
+    updateSettings({
+      ...settings,
+      patientDob: formatDobValue(nextDob.year, nextDob.month, nextDob.day),
+    });
   }
 
   return (
@@ -136,13 +189,55 @@ export function MiniAppSettings({ selectedGroupId }: MiniAppSettingsProps) {
               </button>
             </div>
 
-            <input
-              type="date"
-              value={settings.patientDob}
-              disabled={!isEditingDob}
-              onChange={(event) => updateSettings({ ...settings, patientDob: event.target.value })}
-              className={`${miniAppTheme.typography.cardTitle} mt-4 h-12 w-full rounded-[14px] border border-[#CBD5E1] bg-white px-4 font-semibold text-[#082B5F] outline-none disabled:bg-[#F8FAFC] disabled:text-[#5F718C]`}
-            />
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <label className="min-w-0">
+                <span className={`${miniAppTheme.typography.caption} mb-1 block text-[#5F718C]`}>วันที่</span>
+                <select
+                  className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-3 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none disabled:bg-[#F8FAFC] disabled:text-[#5F718C]`}
+                  value={dobParts.day}
+                  disabled={!isEditingDob}
+                  onChange={(event) => updateDob({ day: Number(event.target.value) })}
+                >
+                  {dobDayOptions.map((day) => (
+                    <option key={day} value={day}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="min-w-0">
+                <span className={`${miniAppTheme.typography.caption} mb-1 block text-[#5F718C]`}>เดือน</span>
+                <select
+                  className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none disabled:bg-[#F8FAFC] disabled:text-[#5F718C]`}
+                  value={dobParts.month}
+                  disabled={!isEditingDob}
+                  onChange={(event) => updateDob({ month: Number(event.target.value) })}
+                >
+                  {THAI_MONTHS.map((month, index) => (
+                    <option key={month} value={index + 1}>
+                      {month}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="min-w-0">
+                <span className={`${miniAppTheme.typography.caption} mb-1 block text-[#5F718C]`}>ปี</span>
+                <select
+                  className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none disabled:bg-[#F8FAFC] disabled:text-[#5F718C]`}
+                  value={dobParts.year}
+                  disabled={!isEditingDob}
+                  onChange={(event) => updateDob({ year: Number(event.target.value) })}
+                >
+                  {dobYearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year + 543}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </section>
 
           <section className={`${miniAppTheme.card.base} mb-3 p-4`}>

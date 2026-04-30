@@ -320,7 +320,19 @@ function getStructuredSourceMessages(messages: MessageRecord[], selectedGroupId:
     (message) => message.source === "historical_import" && !message.groupId && Boolean(getParsedPayload(message)),
   );
 
-  return groupScoped.some((message) => Boolean(getParsedPayload(message))) ? groupScoped : demoFallback;
+  if (groupScoped.some((message) => Boolean(getParsedPayload(message)))) {
+    return groupScoped;
+  }
+
+  if (selectedGroupId && messages.some((message) => Boolean(getParsedPayload(message)))) {
+    return messages;
+  }
+
+  return demoFallback;
+}
+
+function getParsedMessageCount(messages: MessageRecord[], selectedGroupId: string | null) {
+  return getStructuredSourceMessages(messages, selectedGroupId).filter((message) => Boolean(getParsedPayload(message))).length;
 }
 
 function normalizeMeasuredTime(value: unknown) {
@@ -497,6 +509,31 @@ function thaiInputToIsoDate(value: string) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function parseIsoDobParts(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const fallback = { year: 1950, month: 3, day: 12 };
+
+  if (!match) {
+    return fallback;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const maxDay = getDaysInMonth(year, month);
+  const day = Math.min(Math.max(Number(match[3]), 1), maxDay);
+
+  return { year, month, day };
+}
+
+function formatIsoDobValue(year: number, month: number, day: number) {
+  const safeDay = Math.min(day, getDaysInMonth(year, month));
+  return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
 function formatThaiMonthLabel(date: string) {
   const match = date.match(/^(\d{4})-(\d{2})-/);
 
@@ -600,7 +637,7 @@ function getMonthlyBloodPressurePoints(messages: MessageRecord[], selectedGroupI
     })
     .sort((a, b) => a.day - b.day);
 
-  return dbPoints.length > 0 ? dbPoints : BP_POINTS;
+  return dbPoints.length > 0 || selectedGroupId ? dbPoints : BP_POINTS;
 }
 
 function getDailyBloodPressurePoints(
@@ -702,7 +739,7 @@ function getDailyBloodPressurePoints(
     ];
   });
 
-  return dbPoints.length > 0 ? dbPoints : DAILY_BP_POINTS;
+  return dbPoints.length > 0 || selectedGroupId ? dbPoints : DAILY_BP_POINTS;
 }
 
 
@@ -770,7 +807,7 @@ function getMonthlyPulsePoints(messages: MessageRecord[], selectedGroupId: strin
     }))
     .sort((a, b) => a.day - b.day);
 
-  return dbPoints.length > 0 ? dbPoints : PULSE_POINTS;
+  return dbPoints.length > 0 || selectedGroupId ? dbPoints : PULSE_POINTS;
 }
 
 function getDailyPulsePoints(messages: MessageRecord[], selectedGroupId: string | null, selectedDate: string | null) {
@@ -860,7 +897,7 @@ function getDailyPulsePoints(messages: MessageRecord[], selectedGroupId: string 
     ];
   });
 
-  return dbPoints.length > 0 ? dbPoints : DAILY_PULSE_POINTS;
+  return dbPoints.length > 0 || selectedGroupId ? dbPoints : DAILY_PULSE_POINTS;
 }
 
 
@@ -970,7 +1007,7 @@ function getMonthlySingleMetricPoints(
     }))
     .sort((a, b) => a.day - b.day);
 
-  return dbPoints.length > 0 ? dbPoints : fallbackPoints;
+  return dbPoints.length > 0 || selectedGroupId ? dbPoints : fallbackPoints;
 }
 
 function getDailySingleMetricPoints(
@@ -1013,7 +1050,7 @@ function getDailySingleMetricPoints(
     }];
   });
 
-  return dbPoints.length > 0 ? dbPoints : fallbackPoints;
+  return dbPoints.length > 0 || selectedGroupId ? dbPoints : fallbackPoints;
 }
 
 function Icon({
@@ -1364,6 +1401,8 @@ function BloodPressureChart({
   measuredDates,
   selectedDate,
   onSelectedDateChange,
+  hasLoaded,
+  debugSummary,
 }: {
   mode: ChartMode;
   onModeChange: (mode: ChartMode) => void;
@@ -1373,14 +1412,17 @@ function BloodPressureChart({
   measuredDates: string[];
   selectedDate: string | null;
   onSelectedDateChange: (date: string) => void;
+  hasLoaded: boolean;
+  debugSummary?: string;
 }) {
-  const chartPoints = points.length > 0 ? points : mode === "daily" ? DAILY_BP_POINTS : BP_POINTS;
+  const chartPoints = points;
   const systolic = makePath(chartPoints, "systolic");
   const diastolic = makePath(chartPoints, "diastolic");
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
   const tooltipPoint = selectedPointIndex !== null ? chartPoints[selectedPointIndex] : null;
   const tooltipCoord = selectedPointIndex !== null ? systolic.coords[selectedPointIndex] : null;
   const isDbBacked = chartPoints.some((point) => point.source === "db");
+  const dataSourceLabel = isDbBacked ? "ข้อมูลจาก Supabase" : chartPoints.length > 0 ? "ข้อมูลตัวอย่าง" : hasLoaded ? "ไม่พบข้อมูล" : "กำลังโหลดข้อมูล";
   const plotWidth = BP_CHART.width - BP_CHART.left - BP_CHART.right;
   const plotHeight = BP_CHART.height - BP_CHART.top - BP_CHART.bottom;
   const chartBottom = BP_CHART.top + plotHeight;
@@ -1409,9 +1451,10 @@ function BloodPressureChart({
         <div className="min-w-0">
           <h2 className="text-lg font-bold leading-tight text-[#082B5F]">แนวโน้มความดันโลหิต</h2>
           <p className="max-w-full text-sm leading-snug text-[#5F718C]">
-            (Blood Pressure Trend) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}
+            (Blood Pressure Trend) {dataSourceLabel}
           </p>
           <p className="mt-1 text-xs font-semibold text-[#1976D2]">{periodLabel}</p>
+          {!isDbBacked && debugSummary ? <p className="mt-1 text-[11px] leading-snug text-[#94A3B8]">{debugSummary}</p> : null}
           {mode === "monthly" ? (
             <p className="mt-1 text-xs leading-snug text-[#5F718C]">Monthly แสดงค่าเฉลี่ยความดันของแต่ละวัน</p>
           ) : null}
@@ -1693,6 +1736,7 @@ function PulseTrendChart({
   measuredDates,
   selectedDate,
   onSelectedDateChange,
+  hasLoaded,
 }: {
   mode: ChartMode;
   onModeChange: (mode: ChartMode) => void;
@@ -1701,10 +1745,12 @@ function PulseTrendChart({
   measuredDates: string[];
   selectedDate: string | null;
   onSelectedDateChange: (date: string) => void;
+  hasLoaded: boolean;
 }) {
-  const chartPoints = points.length > 0 ? points : mode === "daily" ? DAILY_PULSE_POINTS : PULSE_POINTS;
+  const chartPoints = points;
   const pulse = makePulsePath(chartPoints);
   const isDbBacked = chartPoints.some((point) => point.source === "db");
+  const dataSourceLabel = isDbBacked ? "ข้อมูลจาก Supabase" : chartPoints.length > 0 ? "ข้อมูลตัวอย่าง" : hasLoaded ? "ไม่พบข้อมูล" : "กำลังโหลดข้อมูล";
   const plotWidth = PULSE_CHART.width - PULSE_CHART.left - PULSE_CHART.right;
   const plotHeight = PULSE_CHART.height - PULSE_CHART.top - PULSE_CHART.bottom;
   const chartBottom = PULSE_CHART.top + plotHeight;
@@ -1733,7 +1779,7 @@ function PulseTrendChart({
         <div className="min-w-0">
           <h2 className="text-lg font-bold leading-tight text-[#082B5F]">แนวโน้มชีพจร</h2>
           <p className="max-w-full text-sm leading-snug text-[#5F718C]">
-            (Pulse Trend) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}
+            (Pulse Trend) {dataSourceLabel}
           </p>
           <p className="mt-1 text-xs font-semibold text-[#E53935]">{periodLabel}</p>
         </div>
@@ -1878,6 +1924,7 @@ function SingleMetricTrendChart({
   ticks,
   evenTickSpacing = false,
   bands,
+  hasLoaded,
 }: {
   mode: ChartMode;
   onModeChange: (mode: ChartMode) => void;
@@ -1895,11 +1942,13 @@ function SingleMetricTrendChart({
   ticks: number[];
   evenTickSpacing?: boolean;
   bands: MetricBand[];
+  hasLoaded: boolean;
 }) {
   const chartPoints = points;
   const segmentedTicks = evenTickSpacing ? ticks : undefined;
   const line = makeSingleMetricPath(chartPoints, chart, segmentedTicks);
   const isDbBacked = chartPoints.some((point) => point.source === "db");
+  const dataSourceLabel = isDbBacked ? "ข้อมูลจาก Supabase" : chartPoints.length > 0 ? "ข้อมูลตัวอย่าง" : hasLoaded ? "ไม่พบข้อมูล" : "กำลังโหลดข้อมูล";
   const plotWidth = chart.width - chart.left - chart.right;
   const plotHeight = chart.height - chart.top - chart.bottom;
   const chartBottom = chart.top + plotHeight;
@@ -1923,7 +1972,7 @@ function SingleMetricTrendChart({
       <div className="space-y-3">
         <div className="min-w-0">
           <h2 className="text-lg font-bold leading-tight text-[#082B5F]">{title}</h2>
-          <p className="max-w-full text-sm leading-snug text-[#5F718C]">({englishTitle}) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}</p>
+          <p className="max-w-full text-sm leading-snug text-[#5F718C]">({englishTitle}) {dataSourceLabel}</p>
           <p className="mt-1 text-xs font-semibold" style={{ color }}>{periodLabel}</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2048,16 +2097,28 @@ function EditDOBBottomSheet({
   onClose: () => void;
   onSave: () => void;
 }) {
+  const dobParts = useMemo(() => parseIsoDobParts(value), [value]);
+  const daysInDobMonth = useMemo(() => getDaysInMonth(dobParts.year, dobParts.month), [dobParts.month, dobParts.year]);
+  const dobDayOptions = useMemo(() => Array.from({ length: daysInDobMonth }, (_, index) => index + 1), [daysInDobMonth]);
+  const dobYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 121 }, (_, index) => currentYear - index);
+  }, []);
   const [displayValue, setDisplayValue] = useState(isoDateToThaiInput(value));
   const parsedValue = thaiInputToIsoDate(displayValue);
 
   useEffect(() => {
     if (open) {
-      queueMicrotask(() => setDisplayValue(isoDateToThaiInput(value)));
+      queueMicrotask(() => onChange(formatIsoDobValue(dobParts.year, dobParts.month, dobParts.day)));
     }
-  }, [open, value]);
+  }, [dobParts.day, dobParts.month, dobParts.year, onChange, open]);
 
   if (!open) return null;
+
+  const handleDobChange = (nextParts: Partial<typeof dobParts>) => {
+    const nextDob = { ...dobParts, ...nextParts };
+    onChange(formatIsoDobValue(nextDob.year, nextDob.month, nextDob.day));
+  };
 
   const handleSave = () => {
     if (!parsedValue) return;
@@ -2097,13 +2158,102 @@ function EditDOBBottomSheet({
   );
 }
 
+function EditDOBSelectBottomSheet({
+  open,
+  value,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const dobParts = useMemo(() => parseIsoDobParts(value), [value]);
+  const daysInDobMonth = useMemo(() => getDaysInMonth(dobParts.year, dobParts.month), [dobParts.month, dobParts.year]);
+  const dobDayOptions = useMemo(() => Array.from({ length: daysInDobMonth }, (_, index) => index + 1), [daysInDobMonth]);
+  const dobYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 121 }, (_, index) => currentYear - index);
+  }, []);
+
+  if (!open) return null;
+
+  const handleDobChange = (nextParts: Partial<typeof dobParts>) => {
+    const nextDob = { ...dobParts, ...nextParts };
+    onChange(formatIsoDobValue(nextDob.year, nextDob.month, nextDob.day));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/40 px-3 pb-3" onClick={onClose}>
+      <section className="w-full rounded-[22px] bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[#CBD5E1]" />
+        <h2 className="text-xl font-bold text-[#082B5F]">แก้ไขวันเกิด</h2>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <label className="min-w-0">
+            <span className="mb-1 block text-sm font-semibold text-[#475569]">วันที่</span>
+            <select
+              className="h-[52px] w-full rounded-[14px] border border-[#D7E6F8] bg-white px-3 text-base font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none focus:border-[#1976D2] focus:ring-2 focus:ring-[#DCEEFF]"
+              value={dobParts.day}
+              onChange={(event) => handleDobChange({ day: Number(event.target.value) })}
+            >
+              {dobDayOptions.map((day) => (
+                <option key={day} value={day}>
+                  {day}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="min-w-0">
+            <span className="mb-1 block text-sm font-semibold text-[#475569]">เดือน</span>
+            <select
+              className="h-[52px] w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 text-base font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none focus:border-[#1976D2] focus:ring-2 focus:ring-[#DCEEFF]"
+              value={dobParts.month}
+              onChange={(event) => handleDobChange({ month: Number(event.target.value) })}
+            >
+              {THAI_MONTHS_LONG.map((month, index) => (
+                <option key={month} value={index + 1}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="min-w-0">
+            <span className="mb-1 block text-sm font-semibold text-[#475569]">ปี</span>
+            <select
+              className="h-[52px] w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 text-base font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none focus:border-[#1976D2] focus:ring-2 focus:ring-[#DCEEFF]"
+              value={dobParts.year}
+              onChange={(event) => handleDobChange({ year: Number(event.target.value) })}
+            >
+              {dobYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year + 543}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="mt-5 flex gap-3">
+          <button type="button" onClick={onClose} className="h-[52px] flex-1 rounded-[14px] border border-[#CBD5E1] bg-white text-base font-semibold text-[#082B5F]">ยกเลิก</button>
+          <button type="button" onClick={onSave} className="h-[52px] flex-1 rounded-[14px] bg-[#1976D2] text-base font-bold text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)]">บันทึก</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SaveToast({ show }: { show: boolean }) {
   if (!show) return null;
   return <div className="fixed bottom-24 left-1/2 z-[60] flex h-[52px] w-[260px] -translate-x-1/2 items-center justify-center gap-3 rounded-[14px] bg-[#1F2937] text-white shadow-2xl"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#00C853] font-bold">✓</span><span className="font-medium">บันทึกเรียบร้อย</span></div>;
 }
 
 export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
-  const { messages } = useAutoTrackMessages();
+  const resolvedGroupId = selectedGroupId ?? FATHER_PROFILE_GROUP_ID;
+  const { messages, hasLoaded } = useAutoTrackMessages({ groupId: resolvedGroupId });
+  const [reportMessages, setReportMessages] = useState<MessageRecord[]>([]);
+  const [hasReportMessagesLoaded, setHasReportMessagesLoaded] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [chartMode, setChartMode] = useState<ChartMode>("daily");
@@ -2112,10 +2262,31 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
   const [draftDob, setDraftDob] = useState("1950-03-12");
   const [lineGroupPictureUrl, setLineGroupPictureUrl] = useState<string | null>(null);
   const [isLineGroupPictureLoading, setIsLineGroupPictureLoading] = useState(true);
-  useEffect(() => { const storedDob = window.localStorage.getItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`); if (storedDob) { queueMicrotask(() => { setPatientDob(storedDob); setDraftDob(storedDob); }); } }, [selectedGroupId]);
   useEffect(() => {
     let isMounted = true;
-    fetch(`/api/line/group-summary?groupId=${encodeURIComponent(FATHER_PROFILE_GROUP_ID)}`, { cache: "default" })
+    setHasReportMessagesLoaded(false);
+    fetch(`/api/messages?groupId=${encodeURIComponent(resolvedGroupId)}&limit=500&report=1&_=${Date.now()}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Unable to load report messages"))))
+      .then((data: { messages?: MessageRecord[] }) => {
+        if (isMounted) {
+          setReportMessages(Array.isArray(data.messages) ? data.messages : []);
+          setHasReportMessagesLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setReportMessages([]);
+          setHasReportMessagesLoaded(true);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [resolvedGroupId]);
+  useEffect(() => { const storedDob = window.localStorage.getItem(`mini-app-report-dob:${resolvedGroupId}`); if (storedDob) { queueMicrotask(() => { setPatientDob(storedDob); setDraftDob(storedDob); }); } }, [resolvedGroupId]);
+  useEffect(() => {
+    let isMounted = true;
+    fetch(`/api/line/group-summary?groupId=${encodeURIComponent(resolvedGroupId)}`, { cache: "default" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { pictureUrl?: string | null } | null) => {
         if (isMounted) setLineGroupPictureUrl(data?.pictureUrl ?? null);
@@ -2129,27 +2300,31 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
     return () => {
       isMounted = false;
     };
-  }, []);
-  const groupName = useMemo(() => getGroupName(messages, selectedGroupId), [messages, selectedGroupId]);
+  }, [resolvedGroupId]);
+  const effectiveMessages = reportMessages.length > 0 ? reportMessages : messages;
+  const effectiveHasLoaded = hasLoaded || hasReportMessagesLoaded;
+  const groupName = useMemo(() => getGroupName(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
   const avatarUrl = lineGroupPictureUrl;
-  const { latestBloodPressure, latestPulse } = useMemo(() => getLatestHealthMetrics(messages, selectedGroupId), [messages, selectedGroupId]);
-  const monthlyBloodPressurePoints = useMemo(() => getMonthlyBloodPressurePoints(messages, selectedGroupId), [messages, selectedGroupId]);
-  const measuredDates = useMemo(() => getMeasuredDates(messages, selectedGroupId), [messages, selectedGroupId]);
+  const { latestBloodPressure, latestPulse } = useMemo(() => getLatestHealthMetrics(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
+  const monthlyBloodPressurePoints = useMemo(() => getMonthlyBloodPressurePoints(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
+  const measuredDates = useMemo(() => getMeasuredDates(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
   const activeChartDate = selectedChartDate && measuredDates.includes(selectedChartDate) ? selectedChartDate : measuredDates.at(-1) ?? null;
-  const dailyBloodPressurePoints = useMemo(() => getDailyBloodPressurePoints(messages, selectedGroupId, activeChartDate), [messages, selectedGroupId, activeChartDate]);
-  const monthlyPulsePoints = useMemo(() => getMonthlyPulsePoints(messages, selectedGroupId), [messages, selectedGroupId]);
-  const dailyPulsePoints = useMemo(() => getDailyPulsePoints(messages, selectedGroupId, activeChartDate), [messages, selectedGroupId, activeChartDate]);
-  const monthlyTemperaturePoints = useMemo(() => getMonthlySingleMetricPoints(messages, selectedGroupId, getTemperatureValue, TEMPERATURE_POINTS), [messages, selectedGroupId]);
-  const dailyTemperaturePoints = useMemo(() => getDailySingleMetricPoints(messages, selectedGroupId, activeChartDate, getTemperatureValue, DAILY_TEMPERATURE_POINTS), [messages, selectedGroupId, activeChartDate]);
-  const monthlySpo2Points = useMemo(() => getMonthlySingleMetricPoints(messages, selectedGroupId, getSpo2Value, SPO2_POINTS), [messages, selectedGroupId]);
-  const dailySpo2Points = useMemo(() => getDailySingleMetricPoints(messages, selectedGroupId, activeChartDate, getSpo2Value, DAILY_SPO2_POINTS), [messages, selectedGroupId, activeChartDate]);
-  const latestSourceTimestamp = useMemo(() => getLatestSourceTimestamp(messages, selectedGroupId), [messages, selectedGroupId]);
+  const dailyBloodPressurePoints = useMemo(() => getDailyBloodPressurePoints(effectiveMessages, resolvedGroupId, activeChartDate), [effectiveMessages, resolvedGroupId, activeChartDate]);
+  const monthlyPulsePoints = useMemo(() => getMonthlyPulsePoints(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
+  const dailyPulsePoints = useMemo(() => getDailyPulsePoints(effectiveMessages, resolvedGroupId, activeChartDate), [effectiveMessages, resolvedGroupId, activeChartDate]);
+  const monthlyTemperaturePoints = useMemo(() => getMonthlySingleMetricPoints(effectiveMessages, resolvedGroupId, getTemperatureValue, TEMPERATURE_POINTS), [effectiveMessages, resolvedGroupId]);
+  const dailyTemperaturePoints = useMemo(() => getDailySingleMetricPoints(effectiveMessages, resolvedGroupId, activeChartDate, getTemperatureValue, DAILY_TEMPERATURE_POINTS), [effectiveMessages, resolvedGroupId, activeChartDate]);
+  const monthlySpo2Points = useMemo(() => getMonthlySingleMetricPoints(effectiveMessages, resolvedGroupId, getSpo2Value, SPO2_POINTS), [effectiveMessages, resolvedGroupId]);
+  const dailySpo2Points = useMemo(() => getDailySingleMetricPoints(effectiveMessages, resolvedGroupId, activeChartDate, getSpo2Value, DAILY_SPO2_POINTS), [effectiveMessages, resolvedGroupId, activeChartDate]);
+  const latestSourceTimestamp = useMemo(() => getLatestSourceTimestamp(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
+  const parsedMessageCount = useMemo(() => getParsedMessageCount(effectiveMessages, resolvedGroupId), [effectiveMessages, resolvedGroupId]);
   const bloodPressurePoints = chartMode === "daily" ? dailyBloodPressurePoints : monthlyBloodPressurePoints;
   const pulsePoints = chartMode === "daily" ? dailyPulsePoints : monthlyPulsePoints;
   const temperaturePoints = chartMode === "daily" ? dailyTemperaturePoints : monthlyTemperaturePoints;
   const spo2Points = chartMode === "daily" ? dailySpo2Points : monthlySpo2Points;
   const chartPeriodLabel = chartMode === "daily" ? `รายวัน: ${activeChartDate ? formatThaiDateLabel(activeChartDate) : formatThaiDateFromTimestamp(latestSourceTimestamp)}` : `รายเดือน: ${measuredDates.at(-1) ? formatThaiMonthLabel(measuredDates.at(-1) ?? "") : formatThaiMonthFromTimestamp(latestSourceTimestamp)} (ค่าเฉลี่ยรายวัน)`;
-  function handleSaveDob() { setPatientDob(draftDob); window.localStorage.setItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`, draftDob); setIsEditOpen(false); setShowToast(true); window.setTimeout(() => setShowToast(false), 1800); }
+  const debugSummary = `debug: messages=${effectiveMessages.length}, parsed=${parsedMessageCount}, dates=${measuredDates.length}, monthlyBp=${monthlyBloodPressurePoints.length}, dailyBp=${dailyBloodPressurePoints.length}`;
+  function handleSaveDob() { setPatientDob(draftDob); window.localStorage.setItem(`mini-app-report-dob:${resolvedGroupId}`, draftDob); setIsEditOpen(false); setShowToast(true); window.setTimeout(() => setShowToast(false), 1800); }
   return <main className={miniAppTheme.layout.page}>
     <div className={miniAppTheme.layout.shell}>
       <HeaderBar
@@ -2166,6 +2341,6 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
         </p>
         <PatientProfileCard avatarUrl={avatarUrl} isAvatarLoading={isLineGroupPictureLoading} dobLabel={formatThaiDobWithAge(patientDob)} onEditDob={() => { setDraftDob(patientDob); setIsEditOpen(true); }} /><AlertCard />
         <LatestHealthCards latestBloodPressure={latestBloodPressure} latestPulse={latestPulse} />
-        <BloodPressureChart mode={chartMode} onModeChange={setChartMode} periodLabel={chartPeriodLabel} points={bloodPressurePoints} monthlyOverviewPoints={monthlyBloodPressurePoints} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} />
-        <PulseTrendChart mode={chartMode} onModeChange={setChartMode} points={pulsePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={temperaturePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มอุณหภูมิ" englishTitle="Temperature Trend" unit="°C" color="#00C853" background="#F0FDF4" chart={TEMP_CHART} ticks={[41, 39, 37, 35]} bands={TEMPERATURE_BANDS} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={spo2Points} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มออกซิเจน" englishTitle="SpO2 Trend" unit="%" color="#7C4DFF" background="#F5F3FF" chart={SPO2_CHART} ticks={[150, 100, 95, 90]} bands={SPO2_BANDS} evenTickSpacing /><ReferenceCriteriaCard /></div><BottomBar active="report" groupId={selectedGroupId} /><EditDOBBottomSheet open={isEditOpen} value={draftDob} onChange={setDraftDob} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} /><SaveToast show={showToast} /></div></main>;
+        <BloodPressureChart mode={chartMode} onModeChange={setChartMode} periodLabel={chartPeriodLabel} points={bloodPressurePoints} monthlyOverviewPoints={monthlyBloodPressurePoints} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} hasLoaded={effectiveHasLoaded} debugSummary={debugSummary} />
+        <PulseTrendChart mode={chartMode} onModeChange={setChartMode} points={pulsePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} hasLoaded={effectiveHasLoaded} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={temperaturePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มอุณหภูมิ" englishTitle="Temperature Trend" unit="°C" color="#00C853" background="#F0FDF4" chart={TEMP_CHART} ticks={[41, 39, 37, 35]} bands={TEMPERATURE_BANDS} hasLoaded={effectiveHasLoaded} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={spo2Points} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มออกซิเจน" englishTitle="SpO2 Trend" unit="%" color="#7C4DFF" background="#F5F3FF" chart={SPO2_CHART} ticks={[150, 100, 95, 90]} bands={SPO2_BANDS} evenTickSpacing hasLoaded={effectiveHasLoaded} /><ReferenceCriteriaCard /></div><BottomBar active="report" groupId={resolvedGroupId} /><EditDOBSelectBottomSheet open={isEditOpen} value={draftDob} onChange={setDraftDob} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} /><SaveToast show={showToast} /></div></main>;
 }

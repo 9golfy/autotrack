@@ -430,18 +430,46 @@ export function buildGroupConversation(messages: MessageRecord[], groupId: strin
   };
 }
 
-export function useAutoTrackMessages() {
+type AutoTrackMessagesOptions = {
+  groupId?: string | null;
+  limit?: number;
+  from?: number | null;
+  to?: number | null;
+};
+
+export function useAutoTrackMessages(options: AutoTrackMessagesOptions = {}) {
   const [messages, setMessages] = useState<MessageRecord[]>([]);
   const [status, setStatus] = useState("กำลังรอข้อมูลจากกลุ่ม LINE");
   const [error, setError] = useState<string | null>(null);
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
+    const params = new URLSearchParams();
+
+    if (options.groupId) {
+      params.set("groupId", options.groupId);
+    }
+
+    if (options.limit) {
+      params.set("limit", String(options.limit));
+    }
+
+    if (typeof options.from === "number" && Number.isFinite(options.from)) {
+      params.set("from", String(options.from));
+    }
+
+    if (typeof options.to === "number" && Number.isFinite(options.to)) {
+      params.set("to", String(options.to));
+    }
+
+    const messagesUrl = params.size > 0 ? `/api/messages?${params.toString()}` : "/api/messages";
 
     async function loadMessages() {
       try {
-        const response = await fetch("/api/messages", { cache: "default" });
+        const refreshUrl = `${messagesUrl}${messagesUrl.includes("?") ? "&" : "?"}_=${Date.now()}`;
+        const response = await fetch(refreshUrl, { cache: "no-store" });
 
         if (!response.ok) {
           throw new Error("Unable to load messages");
@@ -458,6 +486,7 @@ export function useAutoTrackMessages() {
         }
 
         setMessages(data.messages);
+        setHasLoaded(true);
         setError(null);
         setSetupMessage(data.configured === false ? data.setupMessage ?? null : null);
         setStatus(
@@ -473,6 +502,7 @@ export function useAutoTrackMessages() {
         }
 
         console.warn("Unable to refresh LINE messages", loadError);
+        setHasLoaded(true);
         setError((currentError) => currentError ?? "ไม่สามารถโหลดข้อมูลกลุ่ม LINE ได้ในขณะนี้");
       }
     }
@@ -484,9 +514,9 @@ export function useAutoTrackMessages() {
       isMounted = false;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [options.groupId, options.limit, options.from, options.to]);
 
-  return { messages, status, error, setupMessage };
+  return { messages, status, error, setupMessage, hasLoaded };
 }
 
 export function LogoLockup({ collapsed = false }: { collapsed?: boolean }) {

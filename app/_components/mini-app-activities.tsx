@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { BottomBar } from "@/app/_components/mini-app-bottom-bar";
 import { type MessageRecord, useAutoTrackMessages } from "@/app/_components/group-console";
@@ -57,6 +57,55 @@ type ActivityItem = {
   media: MediaUpload | null;
   avatarUrl: string | null;
 };
+
+const THAI_MONTHS = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+] as const;
+
+function getTodayParts() {
+  const today = new Date();
+
+  return {
+    day: today.getDate(),
+    month: today.getMonth() + 1,
+    year: today.getFullYear(),
+  };
+}
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function getLocalDayRange(year: number, month: number, day: number) {
+  const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const end = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+
+  return {
+    from: start.getTime(),
+    to: end.getTime(),
+  };
+}
+
+function formatSelectedDateLabel(year: number, month: number, day: number) {
+  const date = new Date(year, month - 1, day);
+
+  return new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -267,10 +316,43 @@ function ActivityCard({ item }: { item: ActivityItem }) {
 
 export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
   const resolvedGroupId = selectedGroupId ?? FATHER_PROFILE_GROUP_ID;
-  const { messages, status, error } = useAutoTrackMessages();
+  const initialDate = useMemo(() => getTodayParts(), []);
+  const [selectedDay, setSelectedDay] = useState(initialDate.day);
+  const [selectedMonth, setSelectedMonth] = useState(initialDate.month);
+  const [selectedYear, setSelectedYear] = useState(initialDate.year);
+  const daysInSelectedMonth = useMemo(() => getDaysInMonth(selectedYear, selectedMonth), [selectedMonth, selectedYear]);
+  const effectiveSelectedDay = Math.min(selectedDay, daysInSelectedMonth);
+  const dayOptions = useMemo(
+    () => Array.from({ length: daysInSelectedMonth }, (_, index) => index + 1),
+    [daysInSelectedMonth],
+  );
+  const yearOptions = useMemo(
+    () => Array.from({ length: 4 }, (_, index) => initialDate.year - 2 + index),
+    [initialDate.year],
+  );
+  const selectedRange = useMemo(
+    () => getLocalDayRange(selectedYear, selectedMonth, effectiveSelectedDay),
+    [effectiveSelectedDay, selectedMonth, selectedYear],
+  );
+  const selectedDateLabel = useMemo(
+    () => formatSelectedDateLabel(selectedYear, selectedMonth, effectiveSelectedDay),
+    [effectiveSelectedDay, selectedMonth, selectedYear],
+  );
+  const { messages, status, error } = useAutoTrackMessages({
+    groupId: resolvedGroupId,
+    limit: 100,
+    from: selectedRange.from,
+    to: selectedRange.to,
+  });
   const activities = useMemo(() => buildActivityItems(messages, resolvedGroupId), [messages, resolvedGroupId]);
   const groupName = useMemo(() => getGroupName(messages, resolvedGroupId), [messages, resolvedGroupId]);
   const isLoading = messages.length === 0 && !error && status.includes("กำลัง");
+
+  useEffect(() => {
+    if (selectedDay > daysInSelectedMonth) {
+      setSelectedDay(daysInSelectedMonth);
+    }
+  }, [daysInSelectedMonth, selectedDay]);
 
   return (
     <main className={miniAppTheme.layout.page}>
@@ -282,6 +364,54 @@ export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
             <p className={`${miniAppTheme.typography.caption} font-bold uppercase text-[#1976D2]`}>Activity Timeline</p>
             <h1 className={`${miniAppTheme.typography.sectionTitle} mt-1 text-[#082B5F]`}>กิจกรรมล่าสุด</h1>
             <p className={`${miniAppTheme.typography.body} mt-1 text-[#5F718C]`}>กลุ่ม LINE: {groupName}</p>
+            <p className={`${miniAppTheme.typography.caption} mt-1 font-semibold text-[#1976D2]`}>แสดงข้อมูลวันที่ {selectedDateLabel}</p>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <label className="min-w-0">
+                <span className={`${miniAppTheme.typography.caption} mb-1 block text-[#5F718C]`}>วันที่</span>
+                <select
+                  className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-3 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none`}
+                  value={effectiveSelectedDay}
+                  onChange={(event) => setSelectedDay(Number(event.target.value))}
+                >
+                  {dayOptions.map((day) => (
+                    <option key={day} value={day}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="min-w-0">
+                <span className={`${miniAppTheme.typography.caption} mb-1 block text-[#5F718C]`}>เดือน</span>
+                <select
+                  className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none`}
+                  value={selectedMonth}
+                  onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                >
+                  {THAI_MONTHS.map((month, index) => (
+                    <option key={month} value={index + 1}>
+                      {month}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="min-w-0">
+                <span className={`${miniAppTheme.typography.caption} mb-1 block text-[#5F718C]`}>ปี</span>
+                <select
+                  className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none`}
+                  value={selectedYear}
+                  onChange={(event) => setSelectedYear(Number(event.target.value))}
+                >
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year + 543}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </section>
 
           {isLoading ? (

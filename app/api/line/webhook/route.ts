@@ -2,7 +2,8 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseStorageClient } from "@/lib/supabase/admin";
+import { buildStoragePublicUrl } from "@/lib/supabase/storage-url";
 import { buildHealthReport, extractTimedVitalsSamples, type TimedVitalsSample } from "@/lib/health-report";
 import {
   evaluateBloodPressure,
@@ -484,8 +485,8 @@ async function uploadLineMediaContent(
     const fileBuffer = await response.arrayBuffer();
     const contentSizeBytes = fileBuffer.byteLength;
 
-    const supabase = getSupabaseAdminClient();
-    const uploadResult = await supabase.storage.from(bucketName).upload(filePath, fileBuffer, {
+    const storage = getSupabaseStorageClient();
+    const uploadResult = await storage.from(bucketName).upload(filePath, fileBuffer, {
       contentType,
       upsert: false,
       cacheControl: "604800",
@@ -511,7 +512,7 @@ async function uploadLineMediaContent(
       };
     }
 
-    const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+    const contentUrl = buildStoragePublicUrl(filePath, bucketName);
     console.info("Stored LINE media content", {
       messageId,
       bucketName,
@@ -522,10 +523,10 @@ async function uploadLineMediaContent(
     });
 
     return {
-      contentUrl: data.publicUrl,
+      contentUrl,
       contentMimeType: contentType,
       mediaType: mediaType ?? null,
-      thumbnailUrl: mediaType === "image" ? data.publicUrl : null,
+      thumbnailUrl: mediaType === "image" ? contentUrl : null,
       bucketName,
       storagePath: filePath,
       fetchStatus: response.status,
