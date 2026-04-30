@@ -48,6 +48,8 @@ type LineWebhookBody = {
 type UploadedLineContent = {
   contentUrl: string | null;
   contentMimeType: string | null;
+  mediaType: string | null;
+  thumbnailUrl: string | null;
   bucketName: string;
   storagePath: string | null;
   fetchStatus: number | null;
@@ -413,15 +415,33 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
   }
 }
 
-async function uploadLineImageContent(messageId: string): Promise<UploadedLineContent> {
+function buildLineMediaPath(messageId: string, contentType: string, groupId: string | null | undefined) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const safeGroupId = (groupId?.trim() || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const safeMessageId = messageId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const fileExtension = getFileExtension(contentType);
+
+  return `line-webhook/${safeGroupId}/${yyyy}/${mm}/${dd}/${Date.now()}-${safeMessageId}.${fileExtension}`;
+}
+
+async function uploadLineMediaContent(
+  messageId: string,
+  groupId: string | null | undefined,
+  mediaType: string | null | undefined,
+): Promise<UploadedLineContent> {
   const accessToken = getLineMessagingAccessToken();
   const bucketName = (process.env.LINE_MEDIA_BUCKET ?? "line-media").trim();
 
   if (!accessToken) {
-    console.warn("Missing LINE messaging access token; skipping image download");
+    console.warn("Missing LINE messaging access token; skipping media download");
     return {
       contentUrl: null,
       contentMimeType: null,
+      mediaType: mediaType ?? null,
+      thumbnailUrl: null,
       bucketName,
       storagePath: null,
       fetchStatus: null,
@@ -449,6 +469,8 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
       return {
         contentUrl: null,
         contentMimeType: null,
+        mediaType: mediaType ?? null,
+        thumbnailUrl: null,
         bucketName,
         storagePath: null,
         fetchStatus: response.status,
@@ -458,15 +480,15 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
     }
 
     const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-    const fileExtension = getFileExtension(contentType);
-    const filePath = `line-webhook/${messageId}.${fileExtension}`;
+    const filePath = buildLineMediaPath(messageId, contentType, groupId);
     const fileBuffer = await response.arrayBuffer();
     const contentSizeBytes = fileBuffer.byteLength;
 
     const supabase = getSupabaseAdminClient();
     const uploadResult = await supabase.storage.from(bucketName).upload(filePath, fileBuffer, {
       contentType,
-      upsert: true,
+      upsert: false,
+      cacheControl: "604800",
     });
 
     if (uploadResult.error) {
@@ -479,6 +501,8 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
       return {
         contentUrl: null,
         contentMimeType: contentType,
+        mediaType: mediaType ?? null,
+        thumbnailUrl: null,
         bucketName,
         storagePath: filePath,
         fetchStatus: response.status,
@@ -488,18 +512,20 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
     }
 
     const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
-    console.info("Stored LINE image content", {
+    console.info("Stored LINE media content", {
       messageId,
       bucketName,
       filePath,
       contentType,
       contentSizeBytes,
-      publicUrl: data.publicUrl,
+      mediaType: mediaType ?? null,
     });
 
     return {
       contentUrl: data.publicUrl,
       contentMimeType: contentType,
+      mediaType: mediaType ?? null,
+      thumbnailUrl: mediaType === "image" ? data.publicUrl : null,
       bucketName,
       storagePath: filePath,
       fetchStatus: response.status,
@@ -507,54 +533,44 @@ async function uploadLineImageContent(messageId: string): Promise<UploadedLineCo
       error: null,
     };
   } catch (error) {
-    console.error("Unexpected LINE image upload error", error);
+    console.error("Failed to upload LINE media content", { messageId, error });
     return {
       contentUrl: null,
       contentMimeType: null,
+      mediaType: mediaType ?? null,
+      thumbnailUrl: null,
       bucketName,
       storagePath: null,
       fetchStatus: null,
       contentSizeBytes: null,
-      error: error instanceof Error ? error.message : "Unexpected LINE image upload error",
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-function formatSampleBloodPressure(sample: TimedVitalsSample) {
-  return sample.systolic !== null && sample.diastolic !== null
-    ? `${sample.systolic}/${sample.diastolic} mmHg`
-    : "ไม่มีข้อมูล";
-}
-
 function formatSampleValue(value: number | null, unit: string) {
-  return value !== null ? `${value} ${unit}` : "ไม่มีข้อมูล";
+  return value === null ? "ไม่มีข้อมูล" : `${value} ${unit}`;
 }
 
-function formatStatus(status: string) {
-  return `[${status}]`;
+function formatSampleBloodPressure(sample: TimedVitalsSample) {
+  return sample.systolic === null || sample.diastolic === null
+    ? "ไม่มีข้อมูล"
+    : `${sample.systolic}/${sample.diastolic} mmHg`;
+}
+
+function formatStatus(label: string) {
+  return label ? `(${label})` : "";
 }
 
 function buildTimedVitalsFlexBlocks(samples: TimedVitalsSample[]) {
-  const timeOrder = new Map([
-    ["10:00", 1],
-    ["18:00", 2],
-    ["22:00", 3],
-    ["06:00", 4],
-  ]);
-  const orderedSamples = [...samples].sort((left, right) => {
-    const leftOrder = timeOrder.get(left.label) ?? left.hour * 60 + left.minute;
-    const rightOrder = timeOrder.get(right.label) ?? right.hour * 60 + right.minute;
-
-    return leftOrder - rightOrder;
-  });
-  const blocks = orderedSamples.slice(0, 2).map((sample) => ({
+  const blocks = samples.map((sample) => ({
     type: "box",
     layout: "vertical",
     spacing: "xs",
     margin: "sm",
-    paddingAll: "12px",
-    cornerRadius: "16px",
-    backgroundColor: "#F8FBFF",
+    paddingAll: "10px",
+    cornerRadius: "12px",
+    backgroundColor: "#F8FAFC",
     contents: [
       { type: "text", text: `[${sample.label} น.]`, size: "sm", weight: "bold", color: "#0D47A1" },
       {
@@ -881,11 +897,18 @@ export async function POST(request: NextRequest) {
           lineIdentityBySourceKey.set(sourceKey, await resolveLineIdentity(event));
         }
 
-        if (event.message?.type === "image" && event.message.id) {
-          const uploadedContent = await uploadLineImageContent(event.message.id);
+        if (
+          event.message?.id &&
+          ["image", "video", "audio", "file"].includes(event.message.type ?? "")
+        ) {
+          const uploadedContent = await uploadLineMediaContent(
+            event.message.id,
+            event.source?.groupId ?? event.source?.roomId,
+            event.message.type,
+          );
           uploadedContentByMessageId.set(event.message.id, uploadedContent);
 
-          if (uploadedContent.contentUrl) {
+          if (event.message.type === "image" && uploadedContent.contentUrl) {
             uploadedImageUrlBySourceKey.set(sourceKey, uploadedContent.contentUrl);
           }
         }
@@ -914,7 +937,7 @@ export async function POST(request: NextRequest) {
             statusMessage: lineIdentity?.statusMessage ?? null,
             context: structuredFields?.context ?? "other",
             contexts: structuredFields?.contexts ?? ["other"],
-            parsed: (structuredFields?.parsed as any) ?? {},
+            parsed: structuredFields?.parsed ?? {},
             flexTemplate: structuredFields?.flexTemplate ?? "plain_text",
             confidence: structuredFields?.confidence ?? 0,
             source: "webhook",
@@ -932,11 +955,16 @@ export async function POST(request: NextRequest) {
                 error: lineIdentity?.error ?? null,
               },
               mediaUpload:
-                event.message?.type === "image"
+                uploadedContent
                   ? {
                       bucketName: uploadedContent?.bucketName ?? null,
                       storagePath: uploadedContent?.storagePath ?? null,
                       publicUrl: uploadedContent?.contentUrl ?? null,
+                      url: uploadedContent?.contentUrl ?? null,
+                      mediaUrl: uploadedContent?.contentUrl ?? null,
+                      thumbnailUrl: uploadedContent?.thumbnailUrl ?? null,
+                      mediaType: uploadedContent?.mediaType ?? event.message?.type ?? null,
+                      contentType: uploadedContent?.contentMimeType ?? null,
                       contentMimeType: uploadedContent?.contentMimeType ?? null,
                       fetchStatus: uploadedContent?.fetchStatus ?? null,
                       contentSizeBytes: uploadedContent?.contentSizeBytes ?? null,

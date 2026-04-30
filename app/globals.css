@@ -5,6 +5,17 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+  --mini-font-brand: 28px;
+  --mini-font-title: 28px;
+  --mini-font-section: 18px;
+  --mini-font-card-title: 16px;
+  --mini-font-body: 14px;
+  --mini-font-caption: 12px;
+  --mini-font-metric: 24px;
+  --mini-font-nav: 12px;
+  --mini-font-badge: 11px;
+  --mini-line-tight: 1.2;
+  --mini-line-body: 1.45;
 }
 
 * {
@@ -18,11 +29,76 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-family: "Prompt", "Segoe UI", Arial, Helvetica, sans-serif;
 }
 
 button,
 textarea,
 input {
   font: inherit;
+}
+
+@layer components {
+  .mini-font-brand {
+    font-size: var(--mini-font-brand);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+
+  .mini-font-title {
+    font-size: var(--mini-font-title);
+    line-height: var(--mini-line-tight);
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+
+  .mini-font-section {
+    font-size: var(--mini-font-section);
+    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .mini-font-card-title {
+    font-size: var(--mini-font-card-title);
+    line-height: var(--mini-line-tight);
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .mini-font-body {
+    font-size: var(--mini-font-body);
+    line-height: var(--mini-line-body);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .mini-font-caption {
+    font-size: var(--mini-font-caption);
+    line-height: 1.35;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .mini-font-metric {
+    font-size: var(--mini-font-metric);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+
+  .mini-font-nav {
+    font-size: var(--mini-font-nav);
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .mini-font-badge {
+    font-size: var(--mini-font-badge);
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
 }

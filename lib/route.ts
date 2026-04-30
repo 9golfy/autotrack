@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildHealthReport } from "@/lib/health-report";
 
+const PRIVATE_REPORT_CACHE = "private, max-age=30, stale-while-revalidate=120";
+
 /**
  * API Route สำหรับดึงข้อมูลรายงานสุขภาพสำหรับ Mini App
  * รองรับ Query Parameters:
@@ -14,7 +16,10 @@ export async function GET(request: NextRequest) {
   const dateParam = searchParams.get("date");
 
   if (!groupId) {
-    return NextResponse.json({ error: "Missing groupId" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing groupId" },
+      { status: 400, headers: { "Cache-Control": PRIVATE_REPORT_CACHE } },
+    );
   }
 
   try {
@@ -60,9 +65,14 @@ export async function GET(request: NextRequest) {
     // คำนวณรายงาน (ถ้าข้อมูลเหลือวันเดียว กราฟจะแสดงเป็นช่วงเวลา Morning/Afternoon ทันที)
     const report = buildHealthReport(filteredMessages);
 
-    return NextResponse.json(report);
+    return NextResponse.json(report, {
+      headers: { "Cache-Control": PRIVATE_REPORT_CACHE },
+    });
   } catch (error) {
     console.error("[MINI_APP_REPORT_API_ERROR]", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500, headers: { "Cache-Control": PRIVATE_REPORT_CACHE } },
+    );
   }
 }

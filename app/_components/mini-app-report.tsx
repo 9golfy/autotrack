@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { BottomBar } from "@/app/_components/mini-app-bottom-bar";
 import { type MessageRecord, useAutoTrackMessages } from "@/app/_components/group-console";
+import { HeaderBar } from "@/app/_components/mini-app-header-bar";
+import { FATHER_PROFILE_GROUP_ID, miniAppTheme } from "@/app/_components/mini-app-theme";
 import { extractTimedVitalsSamples } from "@/lib/health-report";
 
 type MiniAppReportProps = {
@@ -37,8 +40,6 @@ type SingleMetricPoint = {
   value: number;
   source: "db" | "mock";
 };
-
-const FATHER_PROFILE_GROUP_ID = "Cc7dba355a1ec758b48ed0acd10bae9c5";
 
 const DAILY_TIME_SLOTS = [
   { label: "22:00", matchTimes: ["22:00"], note: "คืนก่อนหน้า" },
@@ -167,10 +168,10 @@ const SPO2_POINTS: SingleMetricPoint[] = Array.from({ length: 30 }, (_, index) =
 }));
 
 const STATUS_META: Record<BpStatus, { label: string; className: string }> = {
-  normal: { label: "ปกติ (Normal)", className: "bg-[#22C55E]" },
-  watch: { label: "เฝ้าระวัง (Watch)", className: "bg-[#F59E0B]" },
-  high: { label: "สูง (High)", className: "bg-[#F97316]" },
-  consult: { label: "ควรปรึกษาแพทย์ (Consult)", className: "bg-[#EF4444]" },
+  normal: { label: "ปกติ (Normal)", className: "bg-[#00C853]" },
+  watch: { label: "เฝ้าระวัง (Watch)", className: "bg-[#FFB300]" },
+  high: { label: "สูง (High)", className: "bg-[#FB8C00]" },
+  consult: { label: "ควรปรึกษาแพทย์ (Consult)", className: "bg-[#E53935]" },
 };
 
 type MetricBand = {
@@ -211,7 +212,7 @@ function MetricStatusLegend() {
   return (
     <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
       {(Object.keys(STATUS_META) as BpStatus[]).map((status) => (
-        <div key={status} className="flex items-center gap-2 text-[11px] text-[#64748B]">
+        <div key={status} className="flex items-center gap-2 text-[11px] text-[#5F718C]">
           <span className={`h-2.5 w-2.5 rounded-full ${STATUS_META[status].className}`} />
           <span>{STATUS_META[status].label}</span>
         </div>
@@ -373,6 +374,11 @@ function getMessageTimestamp(message: MessageRecord) {
   return Number.isFinite(numericTimestamp) ? numericTimestamp : Date.parse(message.createdAt);
 }
 
+function getFallbackMessageDate(message: MessageRecord) {
+  const timestamp = getMessageTimestamp(message);
+  return Number.isFinite(timestamp) ? toLocalIsoDate(new Date(timestamp)) : null;
+}
+
 function getMeasuredDates(messages: MessageRecord[], selectedGroupId: string | null) {
   const sourceMessages = getStructuredSourceMessages(messages, selectedGroupId);
   const dates = new Set<string>();
@@ -382,11 +388,15 @@ function getMeasuredDates(messages: MessageRecord[], selectedGroupId: string | n
     const vitals = Array.isArray(parsed?.vital_signs) ? parsed.vital_signs : [];
 
     for (const vital of vitals) {
-      if (!isRecord(vital) || typeof vital.measured_date !== "string") {
+      if (!isRecord(vital)) {
         continue;
       }
 
-      dates.add(vital.measured_date);
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
+
+      if (measuredDate) {
+        dates.add(measuredDate);
+      }
     }
 
     if (parsed) {
@@ -529,7 +539,7 @@ function getMonthlyBloodPressurePoints(messages: MessageRecord[], selectedGroupI
         continue;
       }
 
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const day = measuredDate ? Number(measuredDate.slice(-2)) : null;
       const systolic = toNumber(vital.blood_pressure_systolic);
       const diastolic = toNumber(vital.blood_pressure_diastolic);
@@ -615,7 +625,7 @@ function getDailyBloodPressurePoints(
       }
 
       const measuredTime = normalizeMeasuredTime(vital.measured_time);
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const slotKey = findDailySlotKey(measuredTime);
       const bucket = slotKey ? slotValues.get(slotKey) : null;
       const systolic = toNumber(vital.blood_pressure_systolic);
@@ -709,7 +719,7 @@ function getMonthlyPulsePoints(messages: MessageRecord[], selectedGroupId: strin
         continue;
       }
 
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const day = measuredDate ? Number(measuredDate.slice(-2)) : null;
       const pulse = getPulseValue(vital);
 
@@ -781,7 +791,7 @@ function getDailyPulsePoints(messages: MessageRecord[], selectedGroupId: string 
       }
 
       const measuredTime = normalizeMeasuredTime(vital.measured_time);
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const slotKey = findDailySlotKey(measuredTime);
       const bucket = slotKey ? slotValues.get(slotKey) : null;
       const pulse = getPulseValue(vital);
@@ -869,7 +879,7 @@ function getLatestHealthMetrics(messages: MessageRecord[], selectedGroupId: stri
         continue;
       }
 
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const measuredTime = normalizeMeasuredTime(vital.measured_time);
       const measuredTimestamp = measuredDate
         ? Date.parse(`${measuredDate}T${measuredTime ?? "00:00"}:00`)
@@ -942,7 +952,7 @@ function getMonthlySingleMetricPoints(
 
     for (const vital of vitals) {
       if (!isRecord(vital)) continue;
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const day = measuredDate ? Number(measuredDate.slice(-2)) : null;
       const value = getValue(vital);
       if (!day || day < 1 || day > 30 || value === null) continue;
@@ -981,7 +991,7 @@ function getDailySingleMetricPoints(
     for (const vital of vitals) {
       if (!isRecord(vital)) continue;
       const measuredTime = normalizeMeasuredTime(vital.measured_time);
-      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : null;
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : getFallbackMessageDate(message);
       const slotKey = findDailySlotKey(measuredTime);
       const bucket = slotKey ? slotValues.get(slotKey) : null;
       const value = getValue(vital);
@@ -1011,25 +1021,25 @@ function Icon({
   className = "h-6 w-6",
 }: {
   name:
-    | "back"
-    | "home"
-    | "more"
-    | "edit"
-    | "bell"
-    | "eye"
-    | "doc"
-    | "shield"
-    | "calendar"
-    | "chevron"
-    | "heart"
-    | "plus"
-    | "trend"
-    | "report"
-    | "user"
-    | "stats"
-    | "grid"
-    | "clock"
-    | "settings";
+  | "back"
+  | "home"
+  | "more"
+  | "edit"
+  | "bell"
+  | "eye"
+  | "doc"
+  | "shield"
+  | "calendar"
+  | "chevron"
+  | "heart"
+  | "plus"
+  | "trend"
+  | "report"
+  | "user"
+  | "stats"
+  | "grid"
+  | "clock"
+  | "settings";
   className?: string;
 }) {
   const base = `${className} shrink-0`;
@@ -1161,32 +1171,50 @@ function Icon({
 
 function TopHeader() {
   return (
-    <header className="sticky top-0 z-40 h-16 border-b border-[#EEF2F7] bg-white">
-      <div className="mx-auto flex h-full max-w-[390px] items-center justify-between px-4">
-        <div className="flex items-center gap-2">
-          <button type="button" aria-label="Back" className="-ml-2 grid h-9 w-9 place-items-center text-[#0B1B3F]">
-            <Icon name="back" className="h-7 w-7" />
-          </button>
-          <div className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#06C755] text-[9px] font-black text-white shadow-sm ring-2 ring-emerald-50">
-            LINE
+    <header className="sticky top-0 z-40 h-16 border-b border-[#EEF2F7] bg-white/95 backdrop-blur">
+      <div className="mx-auto relative flex h-full max-w-[390px] items-center px-4">
+
+        {/* 🔙 Back Button (ซ้าย) */}
+        <button
+          type="button"
+          aria-label="Back"
+          className="absolute left-4 grid h-10 w-10 place-items-center rounded-full hover:bg-[#F1F5F9] transition text-[#082B5F]"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-6 w-6"
+          >
+            <path d="M15 18 9 12l6-6" />
+          </svg>
+        </button>
+
+        {/* 🛡️ Center Title */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#1976D2] text-white shadow-sm">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-5 w-5"
+            >
+              <path d="M12 3 5 6v5c0 5 3.5 8.5 7 10 3.5-1.5 7-5 7-10V6l-7-3Z" />
+              <path d="M9 12h6M12 9v6" />
+            </svg>
           </div>
+
+          <h1 className="text-2xl font-bold tracking-normal text-[#082B5F]">
+            AutoHealth
+          </h1>
         </div>
 
-        <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
-          <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#2563EB] text-white shadow-sm">
-            <Icon name="shield" className="h-5 w-5" />
-          </div>
-          <span className="text-2xl font-bold tracking-[-0.04em] text-[#0B1B3F]">AutoHealth</span>
-        </div>
-
-        <div className="flex items-center gap-1 text-[#0B1B3F]">
-          <button type="button" aria-label="Home" className="grid h-9 w-9 place-items-center">
-            <Icon name="home" className="h-7 w-7" />
-          </button>
-          <button type="button" aria-label="More" className="-mr-2 grid h-9 w-9 place-items-center">
-            <Icon name="more" className="h-7 w-7" />
-          </button>
-        </div>
       </div>
     </header>
   );
@@ -1196,12 +1224,20 @@ function PatientAvatar({ src, isLoading = false }: { src: string | null; isLoadi
   if (src) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt="คุณพ่อไพโรจน์" className="h-[72px] w-[72px] shrink-0 rounded-full object-cover" />
+      <img
+        src={src}
+        alt="คุณพ่อไพโรจน์"
+        className="h-[72px] w-[72px] shrink-0 rounded-full object-cover"
+        loading="lazy"
+        decoding="async"
+        width={72}
+        height={72}
+      />
     );
   }
 
   return (
-    <div className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-blue-50 px-2 text-center text-[11px] font-bold text-[#2563EB]">
+    <div className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-blue-50 px-2 text-center text-[11px] font-bold text-[#1976D2]">
       {isLoading ? "loading..." : "พ"}
     </div>
   );
@@ -1209,22 +1245,22 @@ function PatientAvatar({ src, isLoading = false }: { src: string | null; isLoadi
 
 function PatientProfileCard({ avatarUrl, isAvatarLoading, dobLabel, onEditDob }: { avatarUrl: string | null; isAvatarLoading: boolean; dobLabel: string; onEditDob: () => void }) {
   return (
-    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <section className="mb-4 rounded-[20px] border border-[#E3EDF8] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="flex items-center gap-4">
         <PatientAvatar src={avatarUrl} isLoading={isAvatarLoading} />
 
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[28px] font-bold leading-tight tracking-[-0.04em] text-[#0B1B3F]">คุณพ่อไพโรจน์</h1>
+          <h1 className="truncate text-[28px] font-bold leading-tight tracking-normal text-[#082B5F]">คุณพ่อไพโรจน์</h1>
           <button
             type="button"
             onClick={onEditDob}
-            className="mt-2 flex max-w-full items-center gap-2 whitespace-nowrap text-left text-base text-[#64748B]"
+            className="mt-2 flex max-w-full items-center gap-2 whitespace-nowrap text-left text-base text-[#5F718C]"
           >
             <span className="truncate">{dobLabel}</span>
-            <Icon name="edit" className="h-[18px] w-[18px] text-[#2563EB]" />
-            <span className="text-sm font-medium text-[#2563EB]">แก้ไข</span>
+            <Icon name="edit" className="h-[18px] w-[18px] text-[#1976D2]" />
+            <span className="text-sm font-medium text-[#1976D2]">แก้ไข</span>
           </button>
-          <p className="mt-1 text-sm leading-5 text-[#64748B]">รายงานความดัน 30 วันล่าสุด</p>
+          <p className="mt-1 text-sm leading-5 text-[#5F718C]">รายงานความดัน 30 วันล่าสุด</p>
         </div>
       </div>
     </section>
@@ -1233,18 +1269,9 @@ function PatientProfileCard({ avatarUrl, isAvatarLoading, dobLabel, onEditDob }:
 
 function AlertCard() {
   return (
-    <section className="mb-4 flex min-h-[78px] items-center gap-4 rounded-[18px] border border-[#FDE68A] bg-gradient-to-r from-[#FFF7E6] to-white px-4 py-3">
-      <div className="flex w-[88px] shrink-0 flex-col items-center justify-center text-center text-[#F59E0B]">
-        <Icon name="eye" className="h-8 w-8" />
-        <span className="mt-1 text-sm font-semibold leading-tight">เฝ้าระวัง (Watch)</span>
-      </div>
-      <div className="h-12 w-px shrink-0 bg-[#CBD5E1]" />
-      <div className="min-w-0 flex-1">
-        <h2 className="text-base font-bold leading-[1.25] text-[#0B1B3F]">พบค่าความดันบางช่วงสูงกว่าค่ามาตรฐาน</h2>
-        <p className="mt-1 text-sm leading-[1.35] text-[#64748B]">แนะนำติดตามค่าอย่างต่อเนื่อง และปรึกษาแพทย์</p>
-      </div>
-      <Icon name="chevron" className="h-5 w-5 shrink-0 text-[#94A3B8]" />
-    </section>
+    <>
+      {/* Move to first page */}
+    </>
   );
 }
 
@@ -1262,8 +1289,8 @@ function LatestHealthCards({
       value: latestBloodPressure ? `${latestBloodPressure.systolic} / ${latestBloodPressure.diastolic}` : "-",
       unit: "mmHg",
       icon: <Icon name="heart" className="h-6 w-6" />,
-      iconClass: "bg-gradient-to-br from-[#2563EB] to-[#60A5FA] text-white",
-      haloClass: "bg-[#EFF6FF]",
+      iconClass: "bg-gradient-to-br from-[#1976D2] to-[#60A5FA] text-white",
+      haloClass: "bg-[#EAF4FF]",
     },
     {
       label: "ชีพจร",
@@ -1271,7 +1298,7 @@ function LatestHealthCards({
       value: latestPulse ? String(latestPulse.value) : "-",
       unit: "bpm",
       icon: <Icon name="heart" className="h-6 w-6 fill-current" />,
-      iconClass: "bg-gradient-to-br from-[#EF4444] to-[#FB7185] text-white",
+      iconClass: "bg-gradient-to-br from-[#E53935] to-[#FB7185] text-white",
       haloClass: "bg-[#FFF1F2]",
     },
     {
@@ -1285,7 +1312,7 @@ function LatestHealthCards({
           <path d="M10 5v11" />
         </svg>
       ),
-      iconClass: "bg-gradient-to-br from-[#22C55E] to-[#86EFAC] text-white",
+      iconClass: "bg-gradient-to-br from-[#00C853] to-[#86EFAC] text-white",
       haloClass: "bg-[#F0FDF4]",
     },
     {
@@ -1300,28 +1327,9 @@ function LatestHealthCards({
   ];
 
   return (
-    <section className="mb-4">
-      <h2 className="mb-2 px-1 text-sm font-bold text-[#0B1B3F]">ข้อมูลสุขภาพล่าสุดวันนี้</h2>
-      <div className="grid grid-cols-2 gap-2">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="min-h-[124px] rounded-[16px] border border-[#E5E7EB] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-            <div className="flex items-start gap-3">
-              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${metric.haloClass}`}>
-                <div className={`grid h-9 w-9 place-items-center rounded-full ${metric.iconClass}`}>{metric.icon}</div>
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold leading-tight text-[#0B1B3F]">{metric.label}</p>
-                <p className="text-xs leading-tight text-[#64748B]">({metric.english})</p>
-                <p className="mt-2 whitespace-nowrap text-[20px] font-extrabold leading-none tracking-[-0.05em] text-[#0B1B3F]">
-                  {metric.value}
-                </p>
-                <p className="mt-1 text-sm font-medium text-[#64748B]">{metric.unit}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
+    <>
+      {/* Move to first page */}
+    </>
   );
 }
 
@@ -1382,34 +1390,34 @@ function BloodPressureChart({
   const xTicks =
     mode === "daily"
       ? DAILY_TIME_SLOTS.map((slot, index) => ({
-          label: slot.label,
-          x: BP_CHART.left + plotWidth * (index / (DAILY_TIME_SLOTS.length - 1)),
-        }))
+        label: slot.label,
+        x: BP_CHART.left + plotWidth * (index / (DAILY_TIME_SLOTS.length - 1)),
+      }))
       : [
-          { label: "1", x: BP_CHART.left },
-          { label: "5", x: BP_CHART.left + (4 / 29) * plotWidth },
-          { label: "10", x: BP_CHART.left + (9 / 29) * plotWidth },
-          { label: "15", x: BP_CHART.left + (14 / 29) * plotWidth },
-          { label: "20", x: BP_CHART.left + (19 / 29) * plotWidth },
-          { label: "25", x: BP_CHART.left + (24 / 29) * plotWidth },
-          { label: "30", x: chartRight },
-        ];
+        { label: "1", x: BP_CHART.left },
+        { label: "5", x: BP_CHART.left + (4 / 29) * plotWidth },
+        { label: "10", x: BP_CHART.left + (9 / 29) * plotWidth },
+        { label: "15", x: BP_CHART.left + (14 / 29) * plotWidth },
+        { label: "20", x: BP_CHART.left + (19 / 29) * plotWidth },
+        { label: "25", x: BP_CHART.left + (24 / 29) * plotWidth },
+        { label: "30", x: chartRight },
+      ];
 
   return (
-    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <section className="mb-4 rounded-[20px] border border-[#E3EDF8] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="space-y-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold leading-tight text-[#0B1B3F]">แนวโน้มความดันโลหิต</h2>
-          <p className="max-w-full text-sm leading-snug text-[#64748B]">
+          <h2 className="text-lg font-bold leading-tight text-[#082B5F]">แนวโน้มความดันโลหิต</h2>
+          <p className="max-w-full text-sm leading-snug text-[#5F718C]">
             (Blood Pressure Trend) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}
           </p>
-          <p className="mt-1 text-xs font-semibold text-[#2563EB]">{periodLabel}</p>
+          <p className="mt-1 text-xs font-semibold text-[#1976D2]">{periodLabel}</p>
           {mode === "monthly" ? (
-            <p className="mt-1 text-xs leading-snug text-[#64748B]">Monthly แสดงค่าเฉลี่ยความดันของแต่ละวัน</p>
+            <p className="mt-1 text-xs leading-snug text-[#5F718C]">Monthly แสดงค่าเฉลี่ยความดันของแต่ละวัน</p>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-[#64748B]">หน่วย: mmHg</p>
+          <p className="text-sm text-[#5F718C]">หน่วย: mmHg</p>
           <div className="ml-auto flex flex-wrap justify-end gap-2">
             <label className="sr-only" htmlFor="bp-chart-mode">
               Chart mode
@@ -1418,7 +1426,7 @@ function BloodPressureChart({
               id="bp-chart-mode"
               value={mode}
               onChange={(event) => onModeChange(event.target.value as ChartMode)}
-              className="h-9 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0B1B3F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#DBEAFE]"
+              className="h-9 rounded-xl border border-[#E3EDF8] bg-white px-3 text-sm font-semibold text-[#082B5F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#DCEEFF]"
             >
               <option value="daily">Daily</option>
               <option value="monthly">Monthly</option>
@@ -1432,7 +1440,7 @@ function BloodPressureChart({
                   id="bp-chart-date"
                   value={selectedDate ?? measuredDates.at(-1) ?? ""}
                   onChange={(event) => onSelectedDateChange(event.target.value)}
-                  className="h-9 max-w-[150px] rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0B1B3F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#DBEAFE]"
+                  className="h-9 max-w-[150px] rounded-xl border border-[#E3EDF8] bg-white px-3 text-sm font-semibold text-[#082B5F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#DCEEFF]"
                 >
                   {measuredDates.map((date) => (
                     <option key={date} value={date}>
@@ -1481,31 +1489,31 @@ function BloodPressureChart({
           const y = yForValue(value);
           return (
             <g key={value}>
-              <text x="0" y={y + 4} className="fill-[#64748B] text-[12px]">
+              <text x="0" y={y + 4} className="fill-[#5F718C] text-[12px]">
                 {value}
               </text>
-              <line x1={BP_CHART.left} x2={chartRight} y1={y} y2={y} stroke="#E5E7EB" strokeDasharray="5 7" />
+              <line x1={BP_CHART.left} x2={chartRight} y1={y} y2={y} stroke="#E3EDF8" strokeDasharray="5 7" />
             </g>
           );
         })}
 
-        <text x={chartRight - 6} y={yForValue(170)} textAnchor="end" className="fill-[#EF4444] text-[10px] font-semibold">
+        <text x={chartRight - 6} y={yForValue(170)} textAnchor="end" className="fill-[#E53935] text-[10px] font-semibold">
           ควรปรึกษาแพทย์
         </text>
-        <text x={chartRight - 6} y={yForValue(170) + 13} textAnchor="end" className="fill-[#EF4444] text-[10px]">
+        <text x={chartRight - 6} y={yForValue(170) + 13} textAnchor="end" className="fill-[#E53935] text-[10px]">
           (Consult)
         </text>
-        <text x={chartRight - 6} y={yForValue(150) + 4} textAnchor="end" className="fill-[#F97316] text-[11px] font-semibold">
+        <text x={chartRight - 6} y={yForValue(150) + 4} textAnchor="end" className="fill-[#FB8C00] text-[11px] font-semibold">
           สูง (High)
         </text>
-        <text x={chartRight - 6} y={yForValue(130) + 4} textAnchor="end" className="fill-[#F59E0B] text-[11px] font-semibold">
+        <text x={chartRight - 6} y={yForValue(130) + 4} textAnchor="end" className="fill-[#FFB300] text-[11px] font-semibold">
           เฝ้าระวัง (Watch)
         </text>
-        <text x={chartRight - 6} y={yForValue(100) + 4} textAnchor="end" className="fill-[#22C55E] text-[11px] font-semibold">
+        <text x={chartRight - 6} y={yForValue(100) + 4} textAnchor="end" className="fill-[#00C853] text-[11px] font-semibold">
           ปกติ (Normal)
         </text>
 
-        <path d={systolic.path} fill="none" stroke="#2563EB" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+        <path d={systolic.path} fill="none" stroke="#1976D2" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
         <path d={diastolic.path} fill="none" stroke="#60A5FA" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
 
         {systolic.coords.map((coord) => (
@@ -1515,7 +1523,7 @@ function BloodPressureChart({
                 x={coord.x}
                 y={Math.max(14, coord.y - 10)}
                 textAnchor="middle"
-                className="fill-[#2563EB] text-[10px] font-bold"
+                className="fill-[#1976D2] text-[10px] font-bold"
               >
                 {coord.value}
               </text>
@@ -1524,7 +1532,7 @@ function BloodPressureChart({
               cx={coord.x}
               cy={coord.y}
               r="5"
-              fill="#2563EB"
+              fill="#1976D2"
               stroke="white"
               strokeWidth="1.5"
               className="cursor-pointer"
@@ -1567,18 +1575,18 @@ function BloodPressureChart({
           <>
             <line x1={tooltipCoord.x} x2={tooltipCoord.x} y1={BP_CHART.top} y2={chartBottom} stroke="#94A3B8" strokeDasharray="4 5" opacity="0.6" />
             <g transform={`translate(${Math.min(chartRight - 84, Math.max(BP_CHART.left + 6, tooltipCoord.x - 37))} 42)`}>
-          <rect width="84" height="68" rx="10" fill="white" filter="drop-shadow(0 8px 12px rgba(15,23,42,0.16))" />
-          <text x="12" y="20" className="fill-[#0B1B3F] text-[12px] font-bold">
-            {mode === "daily" ? tooltipPoint.label : `Day ${tooltipPoint.day}`}
-          </text>
-          <circle cx="14" cy="38" r="4" fill="#2563EB" />
-          <text x="25" y="42" className="fill-[#0B1B3F] text-[11px]">
-            ตัวบน {tooltipPoint.systolic}
-          </text>
-          <circle cx="14" cy="56" r="4" fill="#60A5FA" />
-          <text x="25" y="60" className="fill-[#0B1B3F] text-[11px]">
-            ตัวล่าง {tooltipPoint.diastolic}
-          </text>
+              <rect width="84" height="68" rx="10" fill="white" filter="drop-shadow(0 8px 12px rgba(15,23,42,0.16))" />
+              <text x="12" y="20" className="fill-[#082B5F] text-[12px] font-bold">
+                {mode === "daily" ? tooltipPoint.label : `Day ${tooltipPoint.day}`}
+              </text>
+              <circle cx="14" cy="38" r="4" fill="#1976D2" />
+              <text x="25" y="42" className="fill-[#082B5F] text-[11px]">
+                ตัวบน {tooltipPoint.systolic}
+              </text>
+              <circle cx="14" cy="56" r="4" fill="#60A5FA" />
+              <text x="25" y="60" className="fill-[#082B5F] text-[11px]">
+                ตัวล่าง {tooltipPoint.diastolic}
+              </text>
             </g>
           </>
         ) : null}
@@ -1589,16 +1597,16 @@ function BloodPressureChart({
             x={tick.x}
             y={chartBottom + 24}
             textAnchor="middle"
-            className="fill-[#64748B] text-[11px]"
+            className="fill-[#5F718C] text-[11px]"
           >
             {tick.label}
           </text>
         ))}
       </svg>
 
-      <div className="mt-3 space-y-2 text-[13px] text-[#64748B]">
+      <div className="mt-3 space-y-2 text-[13px] text-[#5F718C]">
         <span className="flex items-center gap-2">
-          <span className="h-2 w-10 rounded-full bg-[#2563EB]" />
+          <span className="h-2 w-10 rounded-full bg-[#1976D2]" />
           แรงดันตอนหัวใจบีบตัว (Systolic)
         </span>
         <span className="flex items-center gap-2">
@@ -1607,7 +1615,7 @@ function BloodPressureChart({
         </span>
       </div>
 
-      <div className="mt-5 border-t border-[#E5E7EB] pt-4">
+      <div className="mt-5 border-t border-[#E3EDF8] pt-4">
         <Overview30Days points={monthlyOverviewPoints} />
       </div>
     </section>
@@ -1624,10 +1632,10 @@ function Overview30Days({ points }: { points: BloodPressurePoint[] }) {
     <div className="rounded-[16px] bg-[#F8FAFC] p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-bold text-[#0B1B3F]">ภาพรวม 30 วัน</p>
-          <p className="mt-1 text-xs text-[#64748B]">เม็ดสีแสดงระดับความดันรายวันทั้งเดือน</p>
+          <p className="text-sm font-bold text-[#082B5F]">ภาพรวม 30 วัน</p>
+          <p className="mt-1 text-xs text-[#5F718C]">เม็ดสีแสดงระดับความดันรายวันทั้งเดือน</p>
         </div>
-        <p className="text-xs font-semibold text-[#64748B]">1-30</p>
+        <p className="text-xs font-semibold text-[#5F718C]">1-30</p>
       </div>
 
       <div className="mt-3 grid grid-cols-10 gap-2">
@@ -1639,7 +1647,7 @@ function Overview30Days({ points }: { points: BloodPressurePoint[] }) {
           return (
             <div key={day} className="flex flex-col items-center gap-1">
               <span className={`h-4 w-4 rounded-full shadow-[0_4px_10px_rgba(15,23,42,0.12)] ${point ? meta.className : "bg-[#CBD5E1]"}`} title={point ? `${day}: ${point.systolic}/${point.diastolic} mmHg` : `${day}: ไม่มีข้อมูล`} />
-              <span className="text-[10px] font-semibold text-[#64748B]">{day}</span>
+              <span className="text-[10px] font-semibold text-[#5F718C]">{day}</span>
             </div>
           );
         })}
@@ -1647,7 +1655,7 @@ function Overview30Days({ points }: { points: BloodPressurePoint[] }) {
 
       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
         {(Object.keys(STATUS_META) as BpStatus[]).map((status) => (
-          <div key={status} className="flex items-center gap-2 text-[11px] text-[#64748B]">
+          <div key={status} className="flex items-center gap-2 text-[11px] text-[#5F718C]">
             <span className={`h-2.5 w-2.5 rounded-full ${STATUS_META[status].className}`} />
             <span>{STATUS_META[status].label}</span>
           </div>
@@ -1706,31 +1714,31 @@ function PulseTrendChart({
   const xTicks =
     mode === "daily"
       ? DAILY_TIME_SLOTS.map((slot, index) => ({
-          label: slot.label,
-          x: PULSE_CHART.left + plotWidth * (index / (DAILY_TIME_SLOTS.length - 1)),
-        }))
+        label: slot.label,
+        x: PULSE_CHART.left + plotWidth * (index / (DAILY_TIME_SLOTS.length - 1)),
+      }))
       : [
-          { label: "1", x: PULSE_CHART.left },
-          { label: "5", x: PULSE_CHART.left + (4 / 29) * plotWidth },
-          { label: "10", x: PULSE_CHART.left + (9 / 29) * plotWidth },
-          { label: "15", x: PULSE_CHART.left + (14 / 29) * plotWidth },
-          { label: "20", x: PULSE_CHART.left + (19 / 29) * plotWidth },
-          { label: "25", x: PULSE_CHART.left + (24 / 29) * plotWidth },
-          { label: "30", x: chartRight },
-        ];
+        { label: "1", x: PULSE_CHART.left },
+        { label: "5", x: PULSE_CHART.left + (4 / 29) * plotWidth },
+        { label: "10", x: PULSE_CHART.left + (9 / 29) * plotWidth },
+        { label: "15", x: PULSE_CHART.left + (14 / 29) * plotWidth },
+        { label: "20", x: PULSE_CHART.left + (19 / 29) * plotWidth },
+        { label: "25", x: PULSE_CHART.left + (24 / 29) * plotWidth },
+        { label: "30", x: chartRight },
+      ];
 
   return (
-    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <section className="mb-4 rounded-[20px] border border-[#E3EDF8] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="space-y-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold leading-tight text-[#0B1B3F]">แนวโน้มชีพจร</h2>
-          <p className="max-w-full text-sm leading-snug text-[#64748B]">
+          <h2 className="text-lg font-bold leading-tight text-[#082B5F]">แนวโน้มชีพจร</h2>
+          <p className="max-w-full text-sm leading-snug text-[#5F718C]">
             (Pulse Trend) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}
           </p>
-          <p className="mt-1 text-xs font-semibold text-[#EF4444]">{periodLabel}</p>
+          <p className="mt-1 text-xs font-semibold text-[#E53935]">{periodLabel}</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-[#64748B]">หน่วย: bpm</p>
+          <p className="text-sm text-[#5F718C]">หน่วย: bpm</p>
           <div className="ml-auto flex flex-wrap justify-end gap-2">
             <label className="sr-only" htmlFor="pulse-chart-mode">
               Chart mode
@@ -1739,7 +1747,7 @@ function PulseTrendChart({
               id="pulse-chart-mode"
               value={mode}
               onChange={(event) => onModeChange(event.target.value as ChartMode)}
-              className="h-9 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0B1B3F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#EF4444] focus:ring-2 focus:ring-[#FEE2E2]"
+              className="h-9 rounded-xl border border-[#E3EDF8] bg-white px-3 text-sm font-semibold text-[#082B5F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#E53935] focus:ring-2 focus:ring-[#FEE2E2]"
             >
               <option value="daily">Daily</option>
               <option value="monthly">Monthly</option>
@@ -1753,7 +1761,7 @@ function PulseTrendChart({
                   id="pulse-chart-date"
                   value={selectedDate ?? measuredDates.at(-1) ?? ""}
                   onChange={(event) => onSelectedDateChange(event.target.value)}
-                  className="h-9 max-w-[150px] rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0B1B3F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#EF4444] focus:ring-2 focus:ring-[#FEE2E2]"
+                  className="h-9 max-w-[150px] rounded-xl border border-[#E3EDF8] bg-white px-3 text-sm font-semibold text-[#082B5F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#E53935] focus:ring-2 focus:ring-[#FEE2E2]"
                 >
                   {measuredDates.map((date) => (
                     <option key={date} value={date}>
@@ -1778,33 +1786,33 @@ function PulseTrendChart({
           const y = yForValue(value);
           return (
             <g key={value}>
-              <text x="0" y={y + 4} className="fill-[#64748B] text-[12px]">
+              <text x="0" y={y + 4} className="fill-[#5F718C] text-[12px]">
                 {value}
               </text>
-              <line x1={PULSE_CHART.left} x2={chartRight} y1={y} y2={y} stroke="#E5E7EB" strokeDasharray="5 7" />
+              <line x1={PULSE_CHART.left} x2={chartRight} y1={y} y2={y} stroke="#E3EDF8" strokeDasharray="5 7" />
             </g>
           );
         })}
 
-        <path d={pulse.path} fill="none" stroke="#EF4444" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+        <path d={pulse.path} fill="none" stroke="#E53935" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
         {pulse.coords.map((coord) => (
           <g key={`pulse-${coord.day}-${coord.fallbackIndex}`}>
-            <text x={coord.x} y={Math.max(14, coord.y - 10)} textAnchor="middle" className="fill-[#EF4444] text-[10px] font-bold">
+            <text x={coord.x} y={Math.max(14, coord.y - 10)} textAnchor="middle" className="fill-[#E53935] text-[10px] font-bold">
               {coord.value}
             </text>
-            <circle cx={coord.x} cy={coord.y} r="5" fill="#EF4444" stroke="white" strokeWidth="1.5" />
+            <circle cx={coord.x} cy={coord.y} r="5" fill="#E53935" stroke="white" strokeWidth="1.5" />
           </g>
         ))}
 
         {xTicks.map((tick) => (
-          <text key={tick.label} x={tick.x} y={chartBottom + 24} textAnchor="middle" className="fill-[#64748B] text-[11px]">
+          <text key={tick.label} x={tick.x} y={chartBottom + 24} textAnchor="middle" className="fill-[#5F718C] text-[11px]">
             {tick.label}
           </text>
         ))}
       </svg>
 
-      <div className="mt-3 flex items-center gap-2 text-[13px] text-[#64748B]">
-        <span className="h-2 w-10 rounded-full bg-[#EF4444]" />
+      <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F718C]">
+        <span className="h-2 w-10 rounded-full bg-[#E53935]" />
         ชีพจร (Pulse) หน่วย bpm
       </div>
       <MetricStatusLegend />
@@ -1901,25 +1909,25 @@ function SingleMetricTrendChart({
   const xTicks = mode === "daily"
     ? DAILY_TIME_SLOTS.map((slot, index) => ({ label: slot.label, x: chart.left + plotWidth * (index / (DAILY_TIME_SLOTS.length - 1)) }))
     : [
-        { label: "1", x: chart.left },
-        { label: "5", x: chart.left + (4 / 29) * plotWidth },
-        { label: "10", x: chart.left + (9 / 29) * plotWidth },
-        { label: "15", x: chart.left + (14 / 29) * plotWidth },
-        { label: "20", x: chart.left + (19 / 29) * plotWidth },
-        { label: "25", x: chart.left + (24 / 29) * plotWidth },
-        { label: "30", x: chartRight },
-      ];
+      { label: "1", x: chart.left },
+      { label: "5", x: chart.left + (4 / 29) * plotWidth },
+      { label: "10", x: chart.left + (9 / 29) * plotWidth },
+      { label: "15", x: chart.left + (14 / 29) * plotWidth },
+      { label: "20", x: chart.left + (19 / 29) * plotWidth },
+      { label: "25", x: chart.left + (24 / 29) * plotWidth },
+      { label: "30", x: chartRight },
+    ];
 
   return (
-    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <section className="mb-4 rounded-[20px] border border-[#E3EDF8] bg-white px-[14px] pb-4 pt-[14px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="space-y-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold leading-tight text-[#0B1B3F]">{title}</h2>
-          <p className="max-w-full text-sm leading-snug text-[#64748B]">({englishTitle}) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}</p>
+          <h2 className="text-lg font-bold leading-tight text-[#082B5F]">{title}</h2>
+          <p className="max-w-full text-sm leading-snug text-[#5F718C]">({englishTitle}) {isDbBacked ? "ข้อมูลจาก Supabase" : "ข้อมูลตัวอย่าง"}</p>
           <p className="mt-1 text-xs font-semibold" style={{ color }}>{periodLabel}</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-[#64748B]">หน่วย: {unit}</p>
+          <p className="text-sm text-[#5F718C]">หน่วย: {unit}</p>
           <div className="ml-auto flex flex-wrap justify-end gap-2">
             <label className="sr-only" htmlFor={`${englishTitle}-mode`}>
               Chart mode
@@ -1928,8 +1936,8 @@ function SingleMetricTrendChart({
               id={`${englishTitle}-mode`}
               value={mode}
               onChange={(event) => onModeChange(event.target.value as ChartMode)}
-              className="h-9 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0B1B3F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition"
-              style={{ borderColor: "#E5E7EB" }}
+              className="h-9 rounded-xl border border-[#E3EDF8] bg-white px-3 text-sm font-semibold text-[#082B5F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition"
+              style={{ borderColor: "#E3EDF8" }}
             >
               <option value="daily">Daily</option>
               <option value="monthly">Monthly</option>
@@ -1943,7 +1951,7 @@ function SingleMetricTrendChart({
                   id={`${englishTitle}-date`}
                   value={selectedDate ?? measuredDates.at(-1) ?? ""}
                   onChange={(event) => onSelectedDateChange(event.target.value)}
-                  className="h-9 max-w-[150px] rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0B1B3F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition"
+                  className="h-9 max-w-[150px] rounded-xl border border-[#E3EDF8] bg-white px-3 text-sm font-semibold text-[#082B5F] shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none transition"
                   style={{ borderColor: color }}
                 >
                   {measuredDates.map((date) => (
@@ -1969,10 +1977,10 @@ function SingleMetricTrendChart({
           const y = yForValue(value);
           return (
             <g key={value}>
-              <text x="0" y={y + 4} className="fill-[#64748B] text-[12px]">
+              <text x="0" y={y + 4} className="fill-[#5F718C] text-[12px]">
                 {value}
               </text>
-              <line x1={chart.left} x2={chartRight} y1={y} y2={y} stroke="#E5E7EB" strokeDasharray="5 7" />
+              <line x1={chart.left} x2={chartRight} y1={y} y2={y} stroke="#E3EDF8" strokeDasharray="5 7" />
             </g>
           );
         })}
@@ -1988,13 +1996,13 @@ function SingleMetricTrendChart({
         ))}
 
         {xTicks.map((tick) => (
-          <text key={tick.label} x={tick.x} y={chartBottom + 24} textAnchor="middle" className="fill-[#64748B] text-[11px]">
+          <text key={tick.label} x={tick.x} y={chartBottom + 24} textAnchor="middle" className="fill-[#5F718C] text-[11px]">
             {tick.label}
           </text>
         ))}
       </svg>
 
-      <div className="mt-3 flex items-center gap-2 text-[13px] text-[#64748B]">
+      <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F718C]">
         <span className="h-2 w-10 rounded-full" style={{ backgroundColor: color }} />
         {title} หน่วย {unit}
       </div>
@@ -2013,39 +2021,17 @@ function ReferenceCriteriaCard() {
   ];
 
   return (
-    <section className="mb-4 rounded-[20px] border border-[#E5E7EB] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-      <h2 className="text-lg font-bold text-[#0B1B3F]">เกณฑ์อ้างอิง</h2>
+    <section className="mb-4 rounded-[20px] border border-[#E3EDF8] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <h2 className="text-lg font-bold text-[#082B5F]">เกณฑ์อ้างอิง</h2>
       <div className="mt-3 space-y-2">
         {criteria.map((item) => (
           <div key={item.label} className="flex items-center justify-between gap-3 rounded-[14px] bg-[#F8FAFC] px-3 py-2">
-            <span className="text-sm font-semibold text-[#0B1B3F]">{item.label}</span>
-            <span className="text-right text-sm text-[#64748B]">{item.value}</span>
+            <span className="text-sm font-semibold text-[#082B5F]">{item.label}</span>
+            <span className="text-right text-sm text-[#5F718C]">{item.value}</span>
           </div>
         ))}
       </div>
     </section>
-  );
-}
-
-function BottomNavigation() {
-  const items: { label: string; icon: React.ComponentProps<typeof Icon>["name"] }[] = [
-    { label: "หน้าแรก", icon: "home" },
-    { label: "รายงาน", icon: "report" },
-    { label: "สถิติ", icon: "stats" },
-    { label: "ตั้งค่า", icon: "settings" },
-  ];
-
-  return (
-    <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[390px] -translate-x-1/2 border-t border-[#E5E7EB] bg-white/95 px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
-      <div className="grid grid-cols-4 gap-1">
-        {items.map((item, index) => (
-          <button key={item.label} type="button" className={`flex flex-col items-center gap-1 rounded-[14px] px-2 py-2 text-xs font-semibold ${index === 1 ? "bg-[#EFF6FF] text-[#2563EB]" : "text-[#64748B]"}`}>
-            <Icon name={item.icon} className="h-5 w-5" />
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </nav>
   );
 }
 
@@ -2066,7 +2052,9 @@ function EditDOBBottomSheet({
   const parsedValue = thaiInputToIsoDate(displayValue);
 
   useEffect(() => {
-    if (open) setDisplayValue(isoDateToThaiInput(value));
+    if (open) {
+      queueMicrotask(() => setDisplayValue(isoDateToThaiInput(value)));
+    }
   }, [open, value]);
 
   if (!open) return null;
@@ -2081,7 +2069,7 @@ function EditDOBBottomSheet({
     <div className="fixed inset-0 z-50 flex items-end bg-black/40 px-3 pb-3" onClick={onClose}>
       <section className="w-full rounded-[22px] bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="mb-4 h-1.5 w-12 rounded-full bg-[#CBD5E1] mx-auto" />
-        <h2 className="text-xl font-bold text-[#0B1B3F]">แก้ไขวันเกิด</h2>
+        <h2 className="text-xl font-bold text-[#082B5F]">แก้ไขวันเกิด</h2>
         <label className="mt-4 block text-sm font-semibold text-[#475569]" htmlFor="patient-dob">
           วันเกิด
         </label>
@@ -2096,13 +2084,13 @@ function EditDOBBottomSheet({
             const nextValue = thaiInputToIsoDate(event.target.value);
             if (nextValue) onChange(nextValue);
           }}
-          className="mt-2 h-[52px] w-full rounded-[14px] border border-[#CBD5E1] px-4 text-base font-semibold text-[#0B1B3F] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#DBEAFE]"
+          className="mt-2 h-[52px] w-full rounded-[14px] border border-[#CBD5E1] px-4 text-base font-semibold text-[#082B5F] outline-none focus:border-[#1976D2] focus:ring-2 focus:ring-[#DCEEFF]"
         />
-        <p className="mt-2 text-[13px] text-[#64748B]">รูปแบบ: วว/ดด/ปปปป (พ.ศ.) เช่น 12/03/2493</p>
-        {!parsedValue ? <p className="mt-1 text-[13px] font-semibold text-[#EF4444]">กรุณากรอกวันที่เป็น พ.ศ. เช่น 12/03/2493</p> : null}
+        <p className="mt-2 text-[13px] text-[#5F718C]">รูปแบบ: วว/ดด/ปปปป (พ.ศ.) เช่น 12/03/2493</p>
+        {!parsedValue ? <p className="mt-1 text-[13px] font-semibold text-[#E53935]">กรุณากรอกวันที่เป็น พ.ศ. เช่น 12/03/2493</p> : null}
         <div className="mt-5 flex gap-3">
-          <button type="button" onClick={onClose} className="h-[52px] flex-1 rounded-[14px] border border-[#CBD5E1] bg-white text-base font-semibold text-[#0B1B3F]">ยกเลิก</button>
-          <button type="button" onClick={handleSave} disabled={!parsedValue} className="h-[52px] flex-1 rounded-[14px] bg-[#2563EB] text-base font-bold text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)] disabled:bg-[#94A3B8]">บันทึก</button>
+          <button type="button" onClick={onClose} className="h-[52px] flex-1 rounded-[14px] border border-[#CBD5E1] bg-white text-base font-semibold text-[#082B5F]">ยกเลิก</button>
+          <button type="button" onClick={handleSave} disabled={!parsedValue} className="h-[52px] flex-1 rounded-[14px] bg-[#1976D2] text-base font-bold text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)] disabled:bg-[#94A3B8]">บันทึก</button>
         </div>
       </section>
     </div>
@@ -2111,7 +2099,7 @@ function EditDOBBottomSheet({
 
 function SaveToast({ show }: { show: boolean }) {
   if (!show) return null;
-  return <div className="fixed bottom-24 left-1/2 z-[60] flex h-[52px] w-[260px] -translate-x-1/2 items-center justify-center gap-3 rounded-[14px] bg-[#1F2937] text-white shadow-2xl"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#22C55E] font-bold">✓</span><span className="font-medium">บันทึกเรียบร้อย</span></div>;
+  return <div className="fixed bottom-24 left-1/2 z-[60] flex h-[52px] w-[260px] -translate-x-1/2 items-center justify-center gap-3 rounded-[14px] bg-[#1F2937] text-white shadow-2xl"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#00C853] font-bold">✓</span><span className="font-medium">บันทึกเรียบร้อย</span></div>;
 }
 
 export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
@@ -2124,11 +2112,10 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
   const [draftDob, setDraftDob] = useState("1950-03-12");
   const [lineGroupPictureUrl, setLineGroupPictureUrl] = useState<string | null>(null);
   const [isLineGroupPictureLoading, setIsLineGroupPictureLoading] = useState(true);
-  useEffect(() => { const storedDob = window.localStorage.getItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`); if (storedDob) { setPatientDob(storedDob); setDraftDob(storedDob); } }, [selectedGroupId]);
+  useEffect(() => { const storedDob = window.localStorage.getItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`); if (storedDob) { queueMicrotask(() => { setPatientDob(storedDob); setDraftDob(storedDob); }); } }, [selectedGroupId]);
   useEffect(() => {
     let isMounted = true;
-    setIsLineGroupPictureLoading(true);
-    fetch(`/api/line/group-summary?groupId=${encodeURIComponent(FATHER_PROFILE_GROUP_ID)}`)
+    fetch(`/api/line/group-summary?groupId=${encodeURIComponent(FATHER_PROFILE_GROUP_ID)}`, { cache: "default" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { pictureUrl?: string | null } | null) => {
         if (isMounted) setLineGroupPictureUrl(data?.pictureUrl ?? null);
@@ -2163,5 +2150,22 @@ export function MiniAppReport({ selectedGroupId }: MiniAppReportProps) {
   const spo2Points = chartMode === "daily" ? dailySpo2Points : monthlySpo2Points;
   const chartPeriodLabel = chartMode === "daily" ? `รายวัน: ${activeChartDate ? formatThaiDateLabel(activeChartDate) : formatThaiDateFromTimestamp(latestSourceTimestamp)}` : `รายเดือน: ${measuredDates.at(-1) ? formatThaiMonthLabel(measuredDates.at(-1) ?? "") : formatThaiMonthFromTimestamp(latestSourceTimestamp)} (ค่าเฉลี่ยรายวัน)`;
   function handleSaveDob() { setPatientDob(draftDob); window.localStorage.setItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`, draftDob); setIsEditOpen(false); setShowToast(true); window.setTimeout(() => setShowToast(false), 1800); }
-  return <main className="min-h-screen overflow-x-hidden bg-[#F8FAFC] font-sans text-[#0B1B3F]"><div className="mx-auto min-h-screen max-w-[390px] overflow-x-hidden bg-[#F8FAFC]"><TopHeader /><div className="px-3 pb-[calc(104px+env(safe-area-inset-bottom))] pt-3"><p className="mb-3 truncate rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-sm text-[#64748B] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">กลุ่ม LINE: {groupName}</p><PatientProfileCard avatarUrl={avatarUrl} isAvatarLoading={isLineGroupPictureLoading} dobLabel={formatThaiDobWithAge(patientDob)} onEditDob={() => { setDraftDob(patientDob); setIsEditOpen(true); }} /><AlertCard /><LatestHealthCards latestBloodPressure={latestBloodPressure} latestPulse={latestPulse} /><BloodPressureChart mode={chartMode} onModeChange={setChartMode} periodLabel={chartPeriodLabel} points={bloodPressurePoints} monthlyOverviewPoints={monthlyBloodPressurePoints} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} /><PulseTrendChart mode={chartMode} onModeChange={setChartMode} points={pulsePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={temperaturePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มอุณหภูมิ" englishTitle="Temperature Trend" unit="°C" color="#22C55E" background="#F0FDF4" chart={TEMP_CHART} ticks={[41, 39, 37, 35]} bands={TEMPERATURE_BANDS} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={spo2Points} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มออกซิเจน" englishTitle="SpO2 Trend" unit="%" color="#7C4DFF" background="#F5F3FF" chart={SPO2_CHART} ticks={[150, 100, 95, 90]} bands={SPO2_BANDS} evenTickSpacing /><ReferenceCriteriaCard /></div><BottomNavigation /><EditDOBBottomSheet open={isEditOpen} value={draftDob} onChange={setDraftDob} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} /><SaveToast show={showToast} /></div></main>;
+  return <main className={miniAppTheme.layout.page}>
+    <div className={miniAppTheme.layout.shell}>
+      <HeaderBar
+        title="AutoHealth"
+        subtitle="รายงานสุขภาพ"
+        groupName={groupName}
+        patientName="คุณพ่อไพโรจน์"
+        avatarUrl={avatarUrl}
+        currentDateLabel={formatThaiDateFromTimestamp(latestSourceTimestamp)}
+      />
+      <div className="px-3 pb-[calc(104px+env(safe-area-inset-bottom))] pt-3">
+        <p className="mb-3 text-center truncate rounded-full border border-[#E3EDF8] bg-white px-4 py-2 text-sm text-[#5F718C] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          กลุ่ม LINE: {groupName}
+        </p>
+        <PatientProfileCard avatarUrl={avatarUrl} isAvatarLoading={isLineGroupPictureLoading} dobLabel={formatThaiDobWithAge(patientDob)} onEditDob={() => { setDraftDob(patientDob); setIsEditOpen(true); }} /><AlertCard />
+        <LatestHealthCards latestBloodPressure={latestBloodPressure} latestPulse={latestPulse} />
+        <BloodPressureChart mode={chartMode} onModeChange={setChartMode} periodLabel={chartPeriodLabel} points={bloodPressurePoints} monthlyOverviewPoints={monthlyBloodPressurePoints} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} />
+        <PulseTrendChart mode={chartMode} onModeChange={setChartMode} points={pulsePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={temperaturePoints} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มอุณหภูมิ" englishTitle="Temperature Trend" unit="°C" color="#00C853" background="#F0FDF4" chart={TEMP_CHART} ticks={[41, 39, 37, 35]} bands={TEMPERATURE_BANDS} /><SingleMetricTrendChart mode={chartMode} onModeChange={setChartMode} points={spo2Points} periodLabel={chartPeriodLabel} measuredDates={measuredDates} selectedDate={activeChartDate} onSelectedDateChange={setSelectedChartDate} title="แนวโน้มออกซิเจน" englishTitle="SpO2 Trend" unit="%" color="#7C4DFF" background="#F5F3FF" chart={SPO2_CHART} ticks={[150, 100, 95, 90]} bands={SPO2_BANDS} evenTickSpacing /><ReferenceCriteriaCard /></div><BottomBar active="report" groupId={selectedGroupId} /><EditDOBBottomSheet open={isEditOpen} value={draftDob} onChange={setDraftDob} onClose={() => setIsEditOpen(false)} onSave={handleSaveDob} /><SaveToast show={showToast} /></div></main>;
 }

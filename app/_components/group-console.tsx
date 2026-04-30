@@ -24,6 +24,10 @@ export type MessageRecord = {
   profileImageUrl?: string | null;
   contentUrl: string | null;
   contentMimeType: string | null;
+  mediaUrl?: string | null;
+  thumbnailUrl?: string | null;
+  mediaType?: "image" | "video" | "audio" | "file" | "text" | string | null;
+  contentType?: string | null;
   source: string;
   text: string | null;
   type: string;
@@ -46,6 +50,13 @@ export type MessageRecord = {
       pictureUrl?: string | null;
     } | null;
     mediaUpload?: {
+      publicUrl?: string | null;
+      url?: string | null;
+      mediaUrl?: string | null;
+      thumbnailUrl?: string | null;
+      mediaType?: "image" | "video" | "audio" | "file" | "text" | string | null;
+      contentType?: string | null;
+      contentMimeType?: string | null;
       error?: string | null;
     } | null;
   } | null;
@@ -430,12 +441,7 @@ export function useAutoTrackMessages() {
 
     async function loadMessages() {
       try {
-        const response = await fetch(`/api/messages?ts=${Date.now()}`, {
-          cache: "no-store",
-          headers: {
-            "Cache-Control": "no-cache",
-          },
-        });
+        const response = await fetch("/api/messages", { cache: "default" });
 
         if (!response.ok) {
           throw new Error("Unable to load messages");
@@ -472,7 +478,7 @@ export function useAutoTrackMessages() {
     }
 
     void loadMessages();
-    const interval = window.setInterval(() => void loadMessages(), 3000);
+    const interval = window.setInterval(() => void loadMessages(), 60000);
 
     return () => {
       isMounted = false;
@@ -642,6 +648,10 @@ export function Avatar({
           src={avatarUrl}
           alt={displayName ?? "LINE user"}
           className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+          width={size}
+          height={size}
           onError={() => setIsImageBroken(true)}
         />
       ) : (
