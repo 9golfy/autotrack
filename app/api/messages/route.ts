@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 
 import { getDatabaseSetupMessage, hasValidDatabaseUrl } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -56,10 +57,13 @@ function buildLeanRawPayload(message: MessageRow) {
     context: message.context,
     contexts: message.contexts ?? [],
     flexTemplate: message.flexTemplate,
-    lineIdentity: lineIdentity
+        lineIdentity: lineIdentity
       ? {
           groupName: asString(lineIdentity.groupName),
           pictureUrl: asString(lineIdentity.pictureUrl),
+          userPictureUrl: asString(lineIdentity.userPictureUrl),
+          memberPictureUrl: asString(lineIdentity.memberPictureUrl),
+          groupPictureUrl: asString(lineIdentity.groupPictureUrl),
           error: asString(lineIdentity.error),
         }
       : null,
@@ -145,6 +149,28 @@ function getTimestampBoundary(value: string | null) {
   return BigInt(Math.trunc(timestamp));
 }
 
+function buildMessageWhereClause(
+  groupId: string | null,
+  fromTimestamp: bigint | null,
+  toTimestamp: bigint | null,
+) {
+  const filters: Prisma.Sql[] = [];
+
+  if (groupId) {
+    filters.push(Prisma.sql`"groupId" = ${groupId}`);
+  }
+
+  if (fromTimestamp !== null) {
+    filters.push(Prisma.sql`"timestamp" >= ${fromTimestamp}::bigint`);
+  }
+
+  if (toTimestamp !== null) {
+    filters.push(Prisma.sql`"timestamp" < ${toTimestamp}::bigint`);
+  }
+
+  return filters.length > 0 ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
+}
+
 export async function GET(request: NextRequest) {
   const groupId = request.nextUrl.searchParams.get("groupId")?.trim() || null;
   const limit = getMessageLimit(request.nextUrl.searchParams.get("limit"));
@@ -163,7 +189,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const messages = await prisma.$queryRaw<MessageRow[]>`
+    // SECURITY: Validate and bind all filters through Prisma parameters before reading message/media metadata.
+    const whereClause = buildMessageWhereClause(groupId, fromTimestamp, toTimestamp);
+    const messages = await prisma.$queryRaw<MessageRow[]>(Prisma.sql`
       SELECT
         "id",
         "messageId",
@@ -183,6 +211,9 @@ export async function GET(request: NextRequest) {
           'lineIdentity', jsonb_build_object(
             'groupName', "rawPayload"->'lineIdentity'->>'groupName',
             'pictureUrl', "rawPayload"->'lineIdentity'->>'pictureUrl',
+            'userPictureUrl', "rawPayload"->'lineIdentity'->>'userPictureUrl',
+            'memberPictureUrl', "rawPayload"->'lineIdentity'->>'memberPictureUrl',
+            'groupPictureUrl', "rawPayload"->'lineIdentity'->>'groupPictureUrl',
             'error', "rawPayload"->'lineIdentity'->>'error'
           ),
           'mediaUpload', jsonb_build_object(
@@ -206,16 +237,15 @@ export async function GET(request: NextRequest) {
         "confidence",
         "importBatchId"
       FROM "Message"
-      WHERE (${groupId}::text IS NULL OR "groupId" = ${groupId})
-        AND (${fromTimestamp}::bigint IS NULL OR "timestamp" >= ${fromTimestamp}::bigint)
-        AND (${toTimestamp}::bigint IS NULL OR "timestamp" < ${toTimestamp}::bigint)
+      ${whereClause}
       ORDER BY "timestamp" DESC
       LIMIT ${limit}
-    `;
+    `);
 
     const publicMessages = messages.map(toPublicMessage);
     const mediaCount = publicMessages.filter((message) => message.mediaUrl).length;
 
+    // SECURITY: Log only aggregate metadata, never message text, media URLs, emails, or raw payloads.
     console.info("mini-app API response", {
       route: "/api/messages",
       itemCount: publicMessages.length,
@@ -251,7 +281,7 @@ export async function POST(request: Request) {
       {
         error: getDatabaseSetupMessage(),
       },
-      { status: 503 },
+      { status: 503, headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
     );
   }
 
@@ -274,10 +304,11 @@ export async function POST(request: Request) {
     if (!body.userId && !body.text) {
       return NextResponse.json(
         { error: "userId or text is required to store a message event" },
-        { status: 400 },
+        { status: 400, headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
       );
     }
 
+    // SECURITY: Store only server-accepted fields and avoid echoing sensitive profile/raw payload data back to the client.
     const savedMessage = await prisma.message.create({
       data: {
         messageId: `${body.event ?? "liff-event"}-${randomUUID()}`,
@@ -302,15 +333,21 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      message: {
-        ...savedMessage,
-        timestamp: savedMessage.timestamp.toString(),
+    return NextResponse.json(
+      {
+        ok: true,
+        message: {
+          id: savedMessage.id,
+          timestamp: savedMessage.timestamp.toString(),
+        },
       },
-    });
+      { headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
+    );
   } catch (error) {
     console.error("Failed to store LIFF message event", error);
-    return NextResponse.json({ error: "Failed to store message event" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to store message event" },
+      { status: 500, headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
+    );
   }
 }

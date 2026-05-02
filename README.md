@@ -36,6 +36,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=""
 SUPABASE_SERVICE_ROLE_KEY=""
 SUPABASE_STORAGE_ENDPOINT="https://vroyppvshsedpijafbtr.storage.supabase.co/storage/v1/s3"
 LINE_MEDIA_BUCKET="line-media"
+GEMINI_API_KEY=""
 ```
 
 ## Local setup

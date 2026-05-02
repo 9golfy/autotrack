@@ -48,5 +48,9 @@ next-env.d.ts
 # local dumps and generated workspace data
 data.sql
 full.sql
+backup.sql
+dbdump/
+script/
+scripts/
 supabase/.temp/
 skills/

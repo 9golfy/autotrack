@@ -42,7 +42,8 @@ type IconName =
   | "stats"
   | "settings"
   | "clipboard"
-  | "shield";
+  | "shield"
+  | "check";
 
 function Icon({
   name,
@@ -188,6 +189,7 @@ function Icon({
         <path d="M9 12h6M12 9v6" />
       </>
     ),
+    check: <path d="m5 12 4 4L19 6" />,
   };
 
   return (
@@ -246,6 +248,7 @@ function PatientAvatar({
 }) {
   if (src) {
     return (
+      // SECURITY: Avatar URLs should be returned by app APIs after authorization and URL rewriting.
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
@@ -610,7 +613,8 @@ type LatestMetricCardProps = {
   english: string;
   value: string;
   unit: string;
-  iconName: IconName;
+  iconName?: IconName;
+  imageSrc?: string;
   iconClass: string;
   haloClass: string;
   href: string;
@@ -622,6 +626,7 @@ function LatestMetricCard({
   value,
   unit,
   iconName,
+  imageSrc,
   iconClass,
   haloClass,
   href,
@@ -631,7 +636,13 @@ function LatestMetricCard({
       <div className="flex items-start gap-3">
         <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${haloClass}`}>
           <div className={`grid h-9 w-9 place-items-center rounded-full ${iconClass}`}>
-            <Icon name={iconName} className="h-6 w-6" />
+            {imageSrc ? (
+              // SECURITY: Mood icons are fixed public Supabase asset URLs controlled by this app.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageSrc} alt="" className="h-8 w-8 object-contain" loading="lazy" decoding="async" />
+            ) : iconName ? (
+              <Icon name={iconName} className="h-6 w-6" />
+            ) : null}
           </div>
         </div>
 
@@ -646,13 +657,647 @@ function LatestMetricCard({
   );
 }
 
-function LatestMetricGrid({ selectedGroupId }: { selectedGroupId: string }) {
+function HomeMetricSkeletonCard({ className = "" }: { className?: string }) {
+  return (
+    <div className={`min-h-[124px] rounded-[16px] border border-[#E3EDF8] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)] ${className}`}>
+      <div className="flex items-start gap-3">
+        <div className="h-12 w-12 shrink-0 animate-pulse rounded-full bg-[#E3EDF8]" />
+        <div className="min-w-0 flex-1">
+          <div className="h-4 w-24 animate-pulse rounded-full bg-[#E3EDF8]" />
+          <div className="mt-2 h-3 w-20 animate-pulse rounded-full bg-[#EEF5FC]" />
+          <div className="mt-3 h-6 w-16 animate-pulse rounded-full bg-[#D7E6F8]" />
+          <div className="mt-2 h-3 w-14 animate-pulse rounded-full bg-[#EEF5FC]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomeMetricGridLoading() {
+  return (
+    <section className="mb-4 grid grid-cols-2 gap-2">
+      <HomeMetricSkeletonCard />
+      <HomeMetricSkeletonCard />
+      <HomeMetricSkeletonCard />
+      <HomeMetricSkeletonCard />
+      <HomeMetricSkeletonCard className="col-span-2 min-h-[120px]" />
+      <HomeMetricSkeletonCard className="col-span-2 min-h-[120px]" />
+      <HomeMetricSkeletonCard className="col-span-2 min-h-[120px]" />
+    </section>
+  );
+}
+
+type MealSlot = "breakfast" | "lunch" | "dinner";
+
+type NutritionSummary = {
+  breakfast: boolean;
+  lunch: boolean;
+  dinner: boolean;
+};
+
+type MedicationSlot = "morning" | "midday" | "evening" | "night";
+
+type MedicationSummary = Record<MedicationSlot, boolean>;
+
+function NutritionMetricCard({
+  summary,
+  href,
+}: {
+  summary: NutritionSummary;
+  href: string;
+}) {
+  const meals: Array<{ slot: MealSlot; label: string; doneLabel: string }> = [
+    { slot: "breakfast", label: "เช้า", doneLabel: "ทานเช้าแล้ว" },
+    { slot: "lunch", label: "กลางวัน", doneLabel: "ทานกลางวันแล้ว" },
+    { slot: "dinner", label: "เย็น", doneLabel: "ทานเย็นแล้ว" },
+  ];
+  const doneCount = meals.filter((meal) => summary[meal.slot]).length;
+  const value = doneCount === meals.length ? "ดี" : doneCount > 0 ? `${doneCount}/3 มื้อ` : "รอข้อมูล";
+
+  return (
+    <Link
+      href={href}
+      className="col-span-2 rounded-[16px] border border-[#E3EDF8] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition active:scale-[0.99]"
+    >
+      <div className="flex items-start gap-2">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#DDFBEA]">
+          <div className="grid h-7 w-7 place-items-center rounded-full bg-[#00C853] text-white">
+            <Icon name="food" className="h-4 w-4" />
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-tight text-[#082B5F]">อาหาร</p>
+              <p className="text-xs leading-tight text-[#5F718C]">(Nutrition)</p>
+            </div>
+            <p className="shrink-0 text-[20px] font-extrabold leading-none tracking-normal text-[#082B5F]">
+              {value}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid w-full grid-cols-3 gap-2">
+        {meals.map((meal) => {
+          const isDone = summary[meal.slot];
+
+          return (
+            <div
+              key={meal.slot}
+              className={`min-h-[62px] rounded-[12px] border px-2 py-2 text-center ${
+                isDone
+                  ? "border-[#BBF7D0] bg-[#F0FDF4] text-[#00A344]"
+                  : "border-[#E3EDF8] bg-[#F8FAFC] text-[#94A3B8]"
+              }`}
+            >
+              <div className="mx-auto grid h-5 w-5 place-items-center rounded-full bg-white">
+                <Icon
+                  name="check"
+                  className={`h-3.5 w-3.5 ${isDone ? "text-[#00C853]" : "text-[#CBD5E1]"}`}
+                />
+              </div>
+              <p className="mt-1 text-[12px] font-bold leading-tight">
+                {isDone ? meal.doneLabel : `รอมื้อ${meal.label}`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </Link>
+  );
+}
+
+function MedicationMetricCard({
+  summary,
+  href,
+}: {
+  summary: MedicationSummary;
+  href: string;
+}) {
+  const slots: Array<{ slot: MedicationSlot; label: string; doneLabel: string }> = [
+    { slot: "morning", label: "เช้า", doneLabel: "ทานยาเช้าแล้ว" },
+    { slot: "midday", label: "กลางวัน", doneLabel: "ทานยากลางวันแล้ว" },
+    { slot: "evening", label: "เย็น", doneLabel: "ทานยาเย็นแล้ว" },
+    { slot: "night", label: "ก่อนนอน", doneLabel: "ทานยาก่อนนอนแล้ว" },
+  ];
+  const doneCount = slots.filter((slot) => summary[slot.slot]).length;
+  const value = doneCount === slots.length ? "ครบ" : doneCount > 0 ? `${doneCount}/4 เวลา` : "รอข้อมูล";
+
+  return (
+    <Link
+      href={href}
+      className="col-span-2 rounded-[16px] border border-[#E3EDF8] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition active:scale-[0.99]"
+    >
+      <div className="flex items-start gap-2">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#F3E8FF]">
+          <div className="grid h-7 w-7 place-items-center rounded-full bg-[#8B5CF6] text-white">
+            <Icon name="pill" className="h-4 w-4" />
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-tight text-[#082B5F]">การกินยา</p>
+              <p className="text-xs leading-tight text-[#5F718C]">(Medication)</p>
+            </div>
+            <p className="shrink-0 text-[20px] font-extrabold leading-none tracking-normal text-[#082B5F]">
+              {value}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid w-full grid-cols-4 gap-2">
+        {slots.map((slot) => {
+          const isDone = summary[slot.slot];
+
+          return (
+            <div
+              key={slot.slot}
+              className={`min-h-[62px] rounded-[12px] border px-1.5 py-2 text-center ${
+                isDone
+                  ? "border-[#DDD6FE] bg-[#F5F3FF] text-[#7C3AED]"
+                  : "border-[#E3EDF8] bg-[#F8FAFC] text-[#94A3B8]"
+              }`}
+            >
+              <div className="mx-auto grid h-5 w-5 place-items-center rounded-full bg-white">
+                <Icon
+                  name="check"
+                  className={`h-3.5 w-3.5 ${isDone ? "text-[#8B5CF6]" : "text-[#CBD5E1]"}`}
+                />
+              </div>
+              <p className="mt-1 text-[11px] font-bold leading-tight">
+                {isDone ? slot.doneLabel : `รอยา${slot.label}`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </Link>
+  );
+}
+
+type LatestVitals = {
+  bloodPressure: string;
+  heartRate: string;
+  temperature: string;
+  spo2: string;
+};
+
+type MoodSummary = {
+  level: 1 | 2 | 3 | 4 | 5;
+  value: string;
+  unit: string;
+  imageSrc: string;
+};
+
+const MOOD_ICON_BASE = "https://pircjjgttpqdcfjxbhxw.supabase.co/storage/v1/object/public/line-media/line-webhook";
+
+const MOOD_BY_LEVEL: Record<MoodSummary["level"], MoodSummary> = {
+  5: {
+    level: 5,
+    value: "ดีมาก",
+    unit: "มีความสุข",
+    imageSrc: `${MOOD_ICON_BASE}/emo_excellent.png`,
+  },
+  4: {
+    level: 4,
+    value: "ดี",
+    unit: "ยิ้มแย้ม",
+    imageSrc: `${MOOD_ICON_BASE}/emo_good.png`,
+  },
+  3: {
+    level: 3,
+    value: "ปกติ",
+    unit: "เฉยๆ",
+    imageSrc: `${MOOD_ICON_BASE}/emo_okay.png`,
+  },
+  2: {
+    level: 2,
+    value: "เฝ้าระวัง",
+    unit: "หงุดหงิด/ซึม",
+    imageSrc: `${MOOD_ICON_BASE}/emo_bad.png`,
+  },
+  1: {
+    level: 1,
+    value: "ผิดปกติ",
+    unit: "ควรติดตาม",
+    imageSrc: `${MOOD_ICON_BASE}/emo_terible.png`,
+  },
+};
+
+const NEGATION_PREFIX = "(?:ไม่มี|ไม่พบ|ไม่|ยังไม่มี|ไม่ได้)";
+
+function MoodMetricCard({
+  summary,
+  href,
+}: {
+  summary: MoodSummary;
+  href: string;
+}) {
+  const levels: MoodSummary["level"][] = [1, 2, 3, 4, 5];
+
+  return (
+    <Link
+      href={href}
+      className="col-span-2 rounded-[16px] border border-[#E3EDF8] bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition active:scale-[0.99]"
+    >
+      <div className="flex items-start gap-2">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#EAF4FF]">
+          <div className="grid h-7 w-7 place-items-center rounded-full bg-white">
+            {/* SECURITY: Mood icons are fixed public Supabase asset URLs controlled by this app. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={MOOD_BY_LEVEL[4].imageSrc} alt="" className="h-6 w-6 object-contain" loading="lazy" decoding="async" />
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-tight text-[#082B5F]">อารมณ์</p>
+              <p className="text-xs leading-tight text-[#5F718C]">(Mood)</p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-[20px] font-extrabold leading-none tracking-normal text-[#082B5F]">
+                {summary.value}
+              </p>
+              <p className="mt-1 text-xs font-medium text-[#5F718C]">{summary.unit}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid w-full grid-cols-5 gap-1.5">
+        {levels.map((level) => {
+          const mood = MOOD_BY_LEVEL[level];
+          const isActive = level === summary.level;
+
+          return (
+            <div
+              key={level}
+              className={`relative min-h-[74px] rounded-[12px] border px-1.5 py-2 text-center ${
+                isActive
+                  ? "border-[#BFDBFE] bg-[#F8FBFF] text-[#082B5F]"
+                  : "border-[#E3EDF8] bg-[#F8FAFC] text-[#94A3B8] opacity-50 grayscale"
+              }`}
+            >
+              <div className="mx-auto grid h-7 w-7 place-items-center rounded-full bg-white">
+                {/* SECURITY: Mood icons are fixed public Supabase asset URLs controlled by this app. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mood.imageSrc} alt="" className="h-6 w-6 object-contain" loading="lazy" decoding="async" />
+              </div>
+              <p className="mt-1 text-[11px] font-extrabold leading-tight">Level {level}</p>
+              <p className="mt-0.5 text-[11px] font-bold leading-tight">{mood.value}</p>
+            </div>
+          );
+        })}
+      </div>
+    </Link>
+  );
+}
+
+function hasKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function hasUnnegatedKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => {
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const negatedPattern = new RegExp(`${NEGATION_PREFIX}.{0,40}${escapedKeyword}`);
+
+    return text.includes(keyword) && !negatedPattern.test(text);
+  });
+}
+
+function getMoodSummaryForDate(messages: MessageRecord[], selectedGroupId: string, dateIso = toLocalIsoDate(new Date())): MoodSummary {
+  const relevantText = messages
+    .filter((message) => {
+      if (message.groupId !== selectedGroupId || !message.text?.trim()) {
+        return false;
+      }
+
+      const parsedDate = isRecord(message.parsed) && typeof message.parsed.report_date === "string" ? message.parsed.report_date : null;
+      const messageDate = toLocalIsoDate(new Date(getMessageTimestamp(message)));
+
+      return parsedDate === dateIso || messageDate === dateIso;
+    })
+    .map((message) => message.text)
+    .join("\n")
+    .replace(/\s+/g, "");
+
+  if (!relevantText) {
+    return MOOD_BY_LEVEL[3];
+  }
+
+  if (hasUnnegatedKeyword(relevantText, ["โวยวาย", "ก้าวร้าว", "เอะอะมาก", "กระสับกระส่ายมาก", "ไม่รู้สึกตัว"])) {
+    return MOOD_BY_LEVEL[1];
+  }
+
+  if (hasUnnegatedKeyword(relevantText, ["หงุดหงิด", "ซึม"])) {
+    return MOOD_BY_LEVEL[2];
+  }
+
+  if (hasKeyword(relevantText, ["อารมณ์ดีมาก", "สนุกสนาน", "ขำขัน", "มีความสุข"])) {
+    return MOOD_BY_LEVEL[5];
+  }
+
+  if (hasKeyword(relevantText, ["ยิ้มแย้ม", "แจ่มใส", "รู้สึกตัวดี", "อารมณ์ดี"])) {
+    return MOOD_BY_LEVEL[4];
+  }
+
+  return MOOD_BY_LEVEL[3];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toNumber(value: unknown) {
+  const numberValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function toLocalIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getMessageTimestamp(message: MessageRecord) {
+  const timestamp = Number(message.timestamp);
+  if (Number.isFinite(timestamp)) {
+    return timestamp;
+  }
+
+  const createdAtTimestamp = Date.parse(message.createdAt);
+  return Number.isFinite(createdAtTimestamp) ? createdAtTimestamp : 0;
+}
+
+function getMealSlotFromHour(hour: number): MealSlot | null {
+  if (hour < 10) {
+    return "breakfast";
+  }
+
+  if (hour >= 10 && hour <= 13) {
+    return "lunch";
+  }
+
+  if (hour >= 15) {
+    return "dinner";
+  }
+
+  return null;
+}
+
+function getMealSlotFromText(text: string): MealSlot | null {
+  if (/อาหารเช้า|มื้อเช้า|ทานเช้า|กินเช้า|breakfast/i.test(text)) {
+    return "breakfast";
+  }
+
+  if (/อาหารกลางวัน|มื้อกลางวัน|ทานกลางวัน|กินกลางวัน|lunch/i.test(text)) {
+    return "lunch";
+  }
+
+  if (/อาหารเย็น|มื้อเย็น|ทานเย็น|กินเย็น|dinner/i.test(text)) {
+    return "dinner";
+  }
+
+  return null;
+}
+
+function getMealSlotFromAiAnalysis(rawPayload: MessageRecord["rawPayload"]): MealSlot | null {
+  const aiAnalysis = rawPayload?.aiAnalysis;
+  if (!isRecord(aiAnalysis) || aiAnalysis.category !== "meal" || !isRecord(aiAnalysis.context)) {
+    return null;
+  }
+
+  const mealSlot = aiAnalysis.context.mealSlot;
+  return mealSlot === "breakfast" || mealSlot === "lunch" || mealSlot === "dinner" ? mealSlot : null;
+}
+
+function getMedicationSlotFromHour(hour: number): MedicationSlot | null {
+  if (hour < 10) {
+    return "morning";
+  }
+
+  if (hour >= 10 && hour <= 13) {
+    return "midday";
+  }
+
+  if (hour >= 20) {
+    return "night";
+  }
+
+  if (hour >= 15) {
+    return "evening";
+  }
+
+  return null;
+}
+
+function getMedicationSlotFromText(text: string): MedicationSlot | null {
+  if (/ยาตอนเช้า|ยาเช้า|ก่อนอาหารเช้า|หลังอาหารเช้า|morning/i.test(text)) {
+    return "morning";
+  }
+
+  if (/ยาตอนกลางวัน|ยากลางวัน|ก่อนอาหารกลางวัน|หลังอาหารกลางวัน|midday|noon/i.test(text)) {
+    return "midday";
+  }
+
+  if (/ยาก่อนนอน|ก่อนนอน|bedtime|night/i.test(text)) {
+    return "night";
+  }
+
+  if (/ยาตอนเย็น|ยาเย็น|ก่อนอาหารเย็น|หลังอาหารเย็น|evening/i.test(text)) {
+    return "evening";
+  }
+
+  return null;
+}
+
+function getMedicationSlotFromAiAnalysis(rawPayload: MessageRecord["rawPayload"]): MedicationSlot | null {
+  const aiAnalysis = rawPayload?.aiAnalysis;
+  if (!isRecord(aiAnalysis) || aiAnalysis.category !== "medication" || !isRecord(aiAnalysis.context)) {
+    return null;
+  }
+
+  const medicationSlot = aiAnalysis.context.medicationSlot;
+  return medicationSlot === "morning" ||
+    medicationSlot === "midday" ||
+    medicationSlot === "evening" ||
+    medicationSlot === "night"
+    ? medicationSlot
+    : null;
+}
+
+function isMealMessage(message: MessageRecord) {
+  if (message.context === "meal" || message.contexts?.includes("meal")) {
+    return true;
+  }
+
+  const aiAnalysis = message.rawPayload?.aiAnalysis;
+  if (isRecord(aiAnalysis) && aiAnalysis.category === "meal") {
+    return true;
+  }
+
+  return Boolean(message.text && /อาหาร|มื้อเช้า|มื้อกลางวัน|มื้อเย็น|ทานข้าว|รับประทาน|กินข้าว|breakfast|lunch|dinner/i.test(message.text));
+}
+
+function isMedicationMessage(message: MessageRecord) {
+  if (message.context === "medication" || message.contexts?.includes("medication")) {
+    return true;
+  }
+
+  const aiAnalysis = message.rawPayload?.aiAnalysis;
+  if (isRecord(aiAnalysis) && aiAnalysis.category === "medication") {
+    return true;
+  }
+
+  return Boolean(message.text && /ยา|เม็ดยา|รับประทานยา|กินยา|ก่อนนอน|medication|medicine|pill/i.test(message.text));
+}
+
+function getNutritionSummaryForDate(messages: MessageRecord[], selectedGroupId: string, dateIso = toLocalIsoDate(new Date())): NutritionSummary {
+  const summary: NutritionSummary = {
+    breakfast: false,
+    lunch: false,
+    dinner: false,
+  };
+
+  for (const message of messages) {
+    if (message.groupId !== selectedGroupId || !isMealMessage(message)) {
+      continue;
+    }
+
+    const messageDate = toLocalIsoDate(new Date(getMessageTimestamp(message)));
+    if (messageDate !== dateIso) {
+      continue;
+    }
+
+    const timestamp = getMessageTimestamp(message);
+    const hour = new Date(timestamp).getHours();
+    const aiSlot = getMealSlotFromAiAnalysis(message.rawPayload);
+    const textSlot = getMealSlotFromText(message.text ?? "");
+    const timeSlot = getMealSlotFromHour(hour);
+    const slot = aiSlot ?? (textSlot ? (textSlot === timeSlot ? textSlot : null) : timeSlot);
+
+    if (slot) {
+      summary[slot] = true;
+    }
+  }
+
+  return summary;
+}
+
+function getMedicationSummaryForDate(messages: MessageRecord[], selectedGroupId: string, dateIso = toLocalIsoDate(new Date())): MedicationSummary {
+  const summary: MedicationSummary = {
+    morning: false,
+    midday: false,
+    evening: false,
+    night: false,
+  };
+
+  for (const message of messages) {
+    if (message.groupId !== selectedGroupId || !isMedicationMessage(message)) {
+      continue;
+    }
+
+    const messageDate = toLocalIsoDate(new Date(getMessageTimestamp(message)));
+    if (messageDate !== dateIso) {
+      continue;
+    }
+
+    const timestamp = getMessageTimestamp(message);
+    const hour = new Date(timestamp).getHours();
+    const aiSlot = getMedicationSlotFromAiAnalysis(message.rawPayload);
+    const textSlot = getMedicationSlotFromText(message.text ?? "");
+    const timeSlot = getMedicationSlotFromHour(hour);
+    const slot = aiSlot ?? (textSlot ? (textSlot === timeSlot ? textSlot : null) : timeSlot);
+
+    if (slot) {
+      summary[slot] = true;
+    }
+  }
+
+  return summary;
+}
+
+function getLatestVitalsForDate(messages: MessageRecord[], selectedGroupId: string, dateIso = toLocalIsoDate(new Date())): LatestVitals {
+  const candidates: Array<{
+    sortKey: number;
+    systolic: number | null;
+    diastolic: number | null;
+    heartRate: number | null;
+    temperature: number | null;
+    spo2: number | null;
+  }> = [];
+
+  for (const message of messages) {
+    if (message.groupId !== selectedGroupId || !isRecord(message.parsed)) {
+      continue;
+    }
+
+    const vitals = Array.isArray(message.parsed.vital_signs) ? message.parsed.vital_signs : [];
+
+    for (const vital of vitals) {
+      if (!isRecord(vital)) {
+        continue;
+      }
+
+      const measuredDate = typeof vital.measured_date === "string" ? vital.measured_date : toLocalIsoDate(new Date(getMessageTimestamp(message)));
+
+      if (measuredDate !== dateIso) {
+        continue;
+      }
+
+      const measuredTime = typeof vital.measured_time === "string" ? vital.measured_time : "00:00";
+      const [hour = "0", minute = "0"] = measuredTime.split(":");
+      const sortKey = Number(hour) * 60 + Number(minute);
+
+      candidates.push({
+        sortKey,
+        systolic: toNumber(vital.blood_pressure_systolic),
+        diastolic: toNumber(vital.blood_pressure_diastolic),
+        heartRate: toNumber(vital.heart_rate_bpm),
+        temperature: toNumber(vital.temperature_c),
+        spo2: toNumber(vital.spo2_percent),
+      });
+    }
+  }
+
+  const latest = candidates.sort((left, right) => right.sortKey - left.sortKey)[0];
+
+  return {
+    bloodPressure: latest?.systolic != null && latest.diastolic != null ? `${latest.systolic} / ${latest.diastolic}` : "-",
+    heartRate: latest?.heartRate !== null && latest?.heartRate !== undefined ? String(latest.heartRate) : "-",
+    temperature: latest?.temperature !== null && latest?.temperature !== undefined ? latest.temperature.toFixed(1) : "-",
+    spo2: latest?.spo2 !== null && latest?.spo2 !== undefined ? String(latest.spo2) : "-",
+  };
+}
+
+function LatestMetricGrid({
+  selectedGroupId,
+  latestVitals,
+  moodSummary,
+  nutritionSummary,
+  medicationSummary,
+}: {
+  selectedGroupId: string;
+  latestVitals: LatestVitals;
+  moodSummary: MoodSummary;
+  nutritionSummary: NutritionSummary;
+  medicationSummary: MedicationSummary;
+}) {
   const group = encodeURIComponent(selectedGroupId);
   const metrics: LatestMetricCardProps[] = [
     {
       label: "ความดัน",
       english: "Blood Pressure",
-      value: "149 / 102",
+      value: latestVitals.bloodPressure,
       unit: "mmHg",
       iconName: "heart",
       iconClass: "bg-[#1976D2] text-white",
@@ -662,7 +1307,7 @@ function LatestMetricGrid({ selectedGroupId }: { selectedGroupId: string }) {
     {
       label: "ชีพจร",
       english: "Heart Rate",
-      value: "78",
+      value: latestVitals.heartRate,
       unit: "bpm",
       iconName: "heart",
       iconClass: "bg-[#F05262] text-white",
@@ -672,7 +1317,7 @@ function LatestMetricGrid({ selectedGroupId }: { selectedGroupId: string }) {
     {
       label: "อุณหภูมิ",
       english: "Temperature",
-      value: "36.5",
+      value: latestVitals.temperature,
       unit: "°C",
       iconName: "thermometer",
       iconClass: "bg-[#2CCF6F] text-white",
@@ -682,7 +1327,7 @@ function LatestMetricGrid({ selectedGroupId }: { selectedGroupId: string }) {
     {
       label: "ออกซิเจน",
       english: "SpO2",
-      value: "98",
+      value: latestVitals.spo2,
       unit: "%",
       iconName: "oxygen",
       iconClass: "bg-[#8B5CF6] text-white",
@@ -692,11 +1337,11 @@ function LatestMetricGrid({ selectedGroupId }: { selectedGroupId: string }) {
     {
       label: "อารมณ์",
       english: "Mood",
-      value: "ปกติ",
-      unit: "สดใส",
-      iconName: "smile",
-      iconClass: "bg-[#1976D2] text-white",
-      haloClass: "bg-[#DCEEFF]",
+      value: moodSummary.value,
+      unit: moodSummary.unit,
+      imageSrc: moodSummary.imageSrc,
+      iconClass: "bg-white",
+      haloClass: "bg-[#EAF4FF]",
       href: `/mini-app?view=activities&metric=mood&groupId=${group}`,
     },
     {
@@ -713,9 +1358,23 @@ function LatestMetricGrid({ selectedGroupId }: { selectedGroupId: string }) {
 
   return (
     <section className="mb-4 grid grid-cols-2 gap-2">
-      {metrics.map((metric) => (
+      {metrics
+        .filter((metric) => metric.english !== "Mood" && metric.english !== "Nutrition")
+        .map((metric) => (
         <LatestMetricCard key={metric.label} {...metric} />
       ))}
+      <MoodMetricCard
+        summary={moodSummary}
+        href={`/mini-app?view=activities&metric=mood&groupId=${group}`}
+      />
+      <NutritionMetricCard
+        summary={nutritionSummary}
+        href={`/mini-app?view=activities&metric=nutrition&groupId=${group}`}
+      />
+      <MedicationMetricCard
+        summary={medicationSummary}
+        href={`/mini-app?view=activities&metric=medication&groupId=${group}`}
+      />
     </section>
   );
 }
@@ -843,7 +1502,7 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
   const selectedGroupId =
     selectedGroupIdProp ?? searchParams.get("groupId") ?? FATHER_PROFILE_GROUP_ID;
 
-  const { messages } = useAutoTrackMessages();
+  const { messages, hasLoaded } = useAutoTrackMessages({ groupId: selectedGroupId, limit: 500 });
   const [lineGroupPictureUrl, setLineGroupPictureUrl] = useState<string | null>(
     null,
   );
@@ -853,6 +1512,7 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
   useEffect(() => {
     let isMounted = true;
 
+    // SECURITY: Fetch only group avatar metadata through the app API; do not call storage providers directly from the client.
     fetch(
       `/api/line/group-summary?groupId=${encodeURIComponent(
         selectedGroupId ?? FATHER_PROFILE_GROUP_ID,
@@ -879,6 +1539,22 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
     () => getGroupName(messages, selectedGroupId),
     [messages, selectedGroupId],
   );
+  const latestVitals = useMemo(
+    () => getLatestVitalsForDate(messages, selectedGroupId),
+    [messages, selectedGroupId],
+  );
+  const moodSummary = useMemo(
+    () => getMoodSummaryForDate(messages, selectedGroupId),
+    [messages, selectedGroupId],
+  );
+  const nutritionSummary = useMemo(
+    () => getNutritionSummaryForDate(messages, selectedGroupId),
+    [messages, selectedGroupId],
+  );
+  const medicationSummary = useMemo(
+    () => getMedicationSummaryForDate(messages, selectedGroupId),
+    [messages, selectedGroupId],
+  );
 
   // ใช้เฉพาะ lineGroupPictureUrl เพื่อให้เหมือนหน้ารายงาน
   const avatarUrl = lineGroupPictureUrl;
@@ -890,8 +1566,10 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
   useEffect(() => {
     const storedDob = window.localStorage.getItem(`mini-app-report-dob:${selectedGroupId ?? "default"}`);
     if (storedDob) {
-      setPatientDob(storedDob);
-      setDraftDob(storedDob);
+      queueMicrotask(() => {
+        setPatientDob(storedDob);
+        setDraftDob(storedDob);
+      });
     }
   }, [selectedGroupId]);
   function handleSaveDob() {
@@ -928,7 +1606,17 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
 
           <MiniAppHomeAlertCard />
           <h2 className="mb-2 mt-0 px-1 text-sm font-bold text-[#082B5F]">ข้อมูลสุขภาพล่าสุดวันนี้</h2>
-          <LatestMetricGrid selectedGroupId={selectedGroupId} />
+          {hasLoaded ? (
+            <LatestMetricGrid
+              selectedGroupId={selectedGroupId}
+              latestVitals={latestVitals}
+              moodSummary={moodSummary}
+              nutritionSummary={nutritionSummary}
+              medicationSummary={medicationSummary}
+            />
+          ) : (
+            <HomeMetricGridLoading />
+          )}
         </div>
 
         <BottomBar active="home" groupId={selectedGroupId} />
@@ -937,3 +1625,4 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
     </main>
   );
 }
+

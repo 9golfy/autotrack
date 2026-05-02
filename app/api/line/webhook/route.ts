@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSupabaseStorageClient } from "@/lib/supabase/admin";
 import { buildStoragePublicUrl } from "@/lib/supabase/storage-url";
+import { analyzeCareImage, type CareImageAnalysis } from "@/lib/analyze-care-image";
 import { buildHealthReport, extractTimedVitalsSamples, type TimedVitalsSample } from "@/lib/health-report";
 import {
   evaluateBloodPressure,
@@ -61,6 +62,8 @@ type UploadedLineContent = {
 type ResolvedLineIdentity = {
   displayName: string | null;
   pictureUrl: string | null;
+  userPictureUrl: string | null;
+  groupPictureUrl: string | null;
   statusMessage: string | null;
   groupName: string | null;
   error: string | null;
@@ -85,6 +88,16 @@ type StructuredWebhookFields = {
   };
   flexTemplate: SupabaseFlexTemplate;
   confidence: number;
+};
+
+type MediaAiAnalysis = CareImageAnalysis & {
+  context: {
+    localDate: string;
+    localTime: string;
+    mealSlot: "breakfast" | "lunch" | "dinner" | "unknown" | null;
+    medicationSlot: "morning" | "midday" | "afternoon" | "evening" | "night" | "unknown" | null;
+    countsAsMealReceived: boolean;
+  };
 };
 
 function verifySignature(body: string, signature: string | null) {
@@ -130,6 +143,122 @@ function toIsoDate(date: Date) {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function getBangkokDateTimeParts(timestamp: number) {
+  const date = new Date(timestamp);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+
+  return {
+    localDate: `${getPart("year")}-${getPart("month")}-${getPart("day")}`,
+    localTime: `${getPart("hour")}:${getPart("minute")}:${getPart("second")}`,
+    hour: Number(getPart("hour")),
+  };
+}
+
+function inferMealSlot(hour: number): MediaAiAnalysis["context"]["mealSlot"] {
+  if (hour < 10) return "breakfast";
+  if (hour >= 10 && hour <= 13) return "lunch";
+  if (hour >= 15) return "dinner";
+  return "unknown";
+}
+
+function inferMedicationSlot(hour: number): MediaAiAnalysis["context"]["medicationSlot"] {
+  if (hour < 10) return "morning";
+  if (hour >= 10 && hour <= 13) return "midday";
+  if (hour >= 20) return "night";
+  if (hour >= 15) return "evening";
+  return "afternoon";
+}
+
+function enrichMediaAiAnalysis(analysis: CareImageAnalysis, timestamp: number): MediaAiAnalysis {
+  const dateTime = getBangkokDateTimeParts(timestamp);
+  const mealSlot = analysis.category === "meal" ? inferMealSlot(dateTime.hour) : null;
+  const medicationSlot = analysis.category === "medication" ? inferMedicationSlot(dateTime.hour) : null;
+
+  return {
+    ...analysis,
+    context: {
+      localDate: dateTime.localDate,
+      localTime: dateTime.localTime,
+      mealSlot,
+      medicationSlot,
+      countsAsMealReceived: Boolean(mealSlot && mealSlot !== "unknown"),
+    },
+  };
+}
+
+async function analyzeUploadedLineMedia(event: LineWebhookEvent, uploadedContent: UploadedLineContent): Promise<MediaAiAnalysis | null> {
+  if (!uploadedContent.contentUrl || !["image", "video"].includes(event.message?.type ?? "")) {
+    return null;
+  }
+
+  try {
+    const analysis = await analyzeCareImage(uploadedContent.contentUrl);
+    return enrichMediaAiAnalysis(analysis, event.timestamp ?? Date.now());
+  } catch (error) {
+    console.error("Failed to analyze LINE media with Gemini", {
+      messageId: event.message?.id ?? null,
+      mediaType: event.message?.type ?? null,
+      error,
+    });
+    return null;
+  }
+}
+
+function getMediaAiSupabaseContext(category: CareImageAnalysis["category"]): SupabaseMessageContext {
+  switch (category) {
+    case "meal":
+      return "meal";
+    case "medication":
+      return "medication";
+    case "vital_sign":
+      return "vital_signs";
+    case "activity":
+    case "sleep":
+      return "activity";
+    case "expense":
+      return "billing";
+    default:
+      return "other";
+  }
+}
+
+function formatMediaAiSummary(analysis: MediaAiAnalysis) {
+  const mealLabelBySlot: Record<Exclude<MediaAiAnalysis["context"]["mealSlot"], null>, string> = {
+    breakfast: "อาหารเช้า",
+    lunch: "อาหารกลางวัน",
+    dinner: "อาหารเย็น",
+    unknown: "ไม่ทราบมื้ออาหาร",
+  };
+  const medicationLabelBySlot: Record<Exclude<MediaAiAnalysis["context"]["medicationSlot"], null>, string> = {
+    morning: "ยาตอนเช้า",
+    midday: "ยาตอนกลางวัน",
+    afternoon: "ยาตอนบ่าย",
+    evening: "ยาตอนเย็น",
+    night: "ยาก่อนนอน",
+    unknown: "ไม่ทราบช่วงเวลากินยา",
+  };
+
+  if (analysis.category === "meal" && analysis.context.mealSlot) {
+    return `${mealLabelBySlot[analysis.context.mealSlot]}: ${analysis.thaiSummary}`;
+  }
+
+  if (analysis.category === "medication" && analysis.context.medicationSlot) {
+    return `${medicationLabelBySlot[analysis.context.medicationSlot]}: ${analysis.thaiSummary}`;
+  }
+
+  return analysis.thaiSummary;
 }
 
 function addDays(date: Date, days: number) {
@@ -301,9 +430,25 @@ function getFileExtension(contentType: string) {
       return "gif";
     case "image/webp":
       return "webp";
+    case "video/mp4":
+      return "mp4";
+    case "audio/mpeg":
+      return "mp3";
+    case "audio/mp4":
+      return "m4a";
     default:
       return "bin";
   }
+}
+
+function getLineMediaBucketName() {
+  const bucketName = (
+    process.env.SUPABASE_STORAGE_BUCKET ??
+    process.env.LINE_MEDIA_BUCKET ??
+    "line-media"
+  ).trim();
+
+  return bucketName || "line-media";
 }
 
 async function fetchLineApiJson<T>(path: string): Promise<T> {
@@ -339,6 +484,8 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
     return {
       displayName: null,
       pictureUrl: null,
+      userPictureUrl: null,
+      groupPictureUrl: null,
       statusMessage: null,
       groupName: null,
       error: "Missing userId in webhook source",
@@ -361,7 +508,9 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
 
       return {
         displayName: memberProfile.displayName ?? null,
-        pictureUrl: groupSummary.pictureUrl ?? null,
+        pictureUrl: memberProfile.pictureUrl ?? null,
+        userPictureUrl: memberProfile.pictureUrl ?? null,
+        groupPictureUrl: groupSummary.pictureUrl ?? null,
         statusMessage: memberProfile.statusMessage ?? null,
         groupName: groupSummary.groupName ?? null,
         error: null,
@@ -378,6 +527,8 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
       return {
         displayName: memberProfile.displayName ?? null,
         pictureUrl: memberProfile.pictureUrl ?? null,
+        userPictureUrl: memberProfile.pictureUrl ?? null,
+        groupPictureUrl: null,
         statusMessage: memberProfile.statusMessage ?? null,
         groupName: null,
         error: null,
@@ -393,6 +544,8 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
     return {
       displayName: profile.displayName ?? null,
       pictureUrl: profile.pictureUrl ?? null,
+      userPictureUrl: profile.pictureUrl ?? null,
+      groupPictureUrl: null,
       statusMessage: profile.statusMessage ?? null,
       groupName: null,
       error: null,
@@ -409,6 +562,8 @@ async function resolveLineIdentity(event: LineWebhookEvent): Promise<ResolvedLin
     return {
       displayName: null,
       pictureUrl: null,
+      userPictureUrl: null,
+      groupPictureUrl: null,
       statusMessage: null,
       groupName: null,
       error: error instanceof Error ? error.message : "Failed to resolve LINE identity",
@@ -434,7 +589,7 @@ async function uploadLineMediaContent(
   mediaType: string | null | undefined,
 ): Promise<UploadedLineContent> {
   const accessToken = getLineMessagingAccessToken();
-  const bucketName = (process.env.LINE_MEDIA_BUCKET ?? "line-media").trim();
+  const bucketName = getLineMediaBucketName();
 
   if (!accessToken) {
     console.warn("Missing LINE messaging access token; skipping media download");
@@ -482,8 +637,19 @@ async function uploadLineMediaContent(
 
     const contentType = response.headers.get("content-type") ?? "application/octet-stream";
     const filePath = buildLineMediaPath(messageId, contentType, groupId);
-    const fileBuffer = await response.arrayBuffer();
+    const arrayBuffer = await response.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
     const contentSizeBytes = fileBuffer.byteLength;
+
+    // SECURITY: Store LINE binary content server-side using the service role key; never expose LINE content API tokens to clients.
+    console.info("Uploading LINE media content", {
+      messageId,
+      bucketName,
+      filePath,
+      contentType,
+      contentSizeBytes,
+      mediaType: mediaType ?? null,
+    });
 
     const storage = getSupabaseStorageClient();
     const uploadResult = await storage.from(bucketName).upload(filePath, fileBuffer, {
@@ -883,6 +1049,7 @@ export async function POST(request: NextRequest) {
   if (messageEvents.length > 0) {
     try {
       const uploadedContentByMessageId = new Map<string, UploadedLineContent>();
+      const mediaAiAnalysisByMessageId = new Map<string, MediaAiAnalysis>();
       const uploadedImageUrlBySourceKey = new Map<string, string>();
       const lineIdentityBySourceKey = new Map<string, ResolvedLineIdentity>();
 
@@ -902,12 +1069,25 @@ export async function POST(request: NextRequest) {
           event.message?.id &&
           ["image", "video", "audio", "file"].includes(event.message.type ?? "")
         ) {
+          console.info("Received LINE media message", {
+            messageId: event.message.id,
+            messageType: event.message.type,
+            sourceType: event.source?.type ?? null,
+            groupId: event.source?.groupId ?? null,
+            roomId: event.source?.roomId ?? null,
+          });
+
           const uploadedContent = await uploadLineMediaContent(
             event.message.id,
             event.source?.groupId ?? event.source?.roomId,
             event.message.type,
           );
           uploadedContentByMessageId.set(event.message.id, uploadedContent);
+
+          const mediaAiAnalysis = await analyzeUploadedLineMedia(event, uploadedContent);
+          if (mediaAiAnalysis) {
+            mediaAiAnalysisByMessageId.set(event.message.id, mediaAiAnalysis);
+          }
 
           if (event.message.type === "image" && uploadedContent.contentUrl) {
             uploadedImageUrlBySourceKey.set(sourceKey, uploadedContent.contentUrl);
@@ -928,21 +1108,34 @@ export async function POST(request: NextRequest) {
           ].join(":");
           const lineIdentity = lineIdentityBySourceKey.get(sourceKey);
           const structuredFields = buildStructuredWebhookFields(event);
+          const mediaAiAnalysis = event.message?.id
+            ? mediaAiAnalysisByMessageId.get(event.message.id)
+            : undefined;
+          const mediaAiContext = mediaAiAnalysis
+            ? getMediaAiSupabaseContext(mediaAiAnalysis.category)
+            : null;
+          const context = structuredFields?.context ?? mediaAiContext ?? "other";
 
           return {
             messageId: event.message?.id ?? event.webhookEventId ?? randomUUID(),
             userId: event.source?.userId ?? null,
             groupId: event.source?.groupId ?? event.source?.roomId ?? null,
             displayName: lineIdentity?.displayName ?? null,
-            pictureUrl: lineIdentity?.pictureUrl ?? null,
+            pictureUrl: lineIdentity?.userPictureUrl ?? lineIdentity?.pictureUrl ?? null,
             statusMessage: lineIdentity?.statusMessage ?? null,
-            context: structuredFields?.context ?? "other",
-            contexts: structuredFields?.contexts ?? ["other"],
+            context,
+            contexts: structuredFields?.contexts ?? [context],
             parsed: structuredFields?.parsed ?? {},
-            flexTemplate: structuredFields?.flexTemplate ?? "plain_text",
-            confidence: structuredFields?.confidence ?? 0,
+            flexTemplate:
+              structuredFields?.flexTemplate ?? getFlexTemplateForSupabaseContext(context),
+            confidence: structuredFields?.confidence ?? mediaAiAnalysis?.confidence ?? 0,
             source: "webhook",
-            text: event.message?.type === "text" ? event.message.text ?? null : null,
+            text:
+              event.message?.type === "text"
+                ? event.message.text ?? null
+                : mediaAiAnalysis
+                  ? formatMediaAiSummary(mediaAiAnalysis)
+                  : null,
             contentUrl: uploadedContent?.contentUrl ?? null,
             contentMimeType: uploadedContent?.contentMimeType ?? null,
             type: event.message?.type ?? "unknown",
@@ -951,6 +1144,9 @@ export async function POST(request: NextRequest) {
               lineIdentity: {
                 displayName: lineIdentity?.displayName ?? null,
                 pictureUrl: lineIdentity?.pictureUrl ?? null,
+                userPictureUrl: lineIdentity?.userPictureUrl ?? null,
+                memberPictureUrl: lineIdentity?.userPictureUrl ?? null,
+                groupPictureUrl: lineIdentity?.groupPictureUrl ?? null,
                 statusMessage: lineIdentity?.statusMessage ?? null,
                 groupName: lineIdentity?.groupName ?? null,
                 error: lineIdentity?.error ?? null,
@@ -972,6 +1168,7 @@ export async function POST(request: NextRequest) {
                       error: uploadedContent?.error ?? null,
                     }
                   : null,
+              aiAnalysis: mediaAiAnalysis ?? null,
             },
             timestamp: BigInt(event.timestamp ?? Date.now()),
           };

@@ -48,6 +48,9 @@ export type MessageRecord = {
       groupName?: string | null;
       error?: string | null;
       pictureUrl?: string | null;
+      userPictureUrl?: string | null;
+      memberPictureUrl?: string | null;
+      groupPictureUrl?: string | null;
     } | null;
     mediaUpload?: {
       publicUrl?: string | null;
@@ -59,6 +62,7 @@ export type MessageRecord = {
       contentMimeType?: string | null;
       error?: string | null;
     } | null;
+    aiAnalysis?: unknown;
   } | null;
 };
 

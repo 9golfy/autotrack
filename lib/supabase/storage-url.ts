@@ -21,7 +21,21 @@ export function getStorageRestEndpoint() {
   }
 
   const base = endpoint.replace(/\/+$/g, "");
-  return base.endsWith("/storage/v1/s3") ? base.slice(0, -"/s3".length) : base;
+  const restBase = base.endsWith("/storage/v1/s3") ? base.slice(0, -"/s3".length) : base;
+
+  try {
+    const parsed = new URL(restBase);
+    const storageHostSuffix = ".storage.supabase.co";
+
+    if (parsed.hostname.endsWith(storageHostSuffix)) {
+      const projectRef = parsed.hostname.slice(0, -storageHostSuffix.length);
+      parsed.hostname = `${projectRef}.supabase.co`;
+    }
+
+    return parsed.toString().replace(/\/+$/g, "");
+  } catch {
+    return restBase;
+  }
 }
 
 export function buildStoragePublicUrl(path: string | null | undefined, bucketName = DEFAULT_STORAGE_BUCKET) {

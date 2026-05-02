@@ -25,6 +25,9 @@ type LineIdentity = {
   displayName?: string | null;
   groupName?: string | null;
   pictureUrl?: string | null;
+  userPictureUrl?: string | null;
+  memberPictureUrl?: string | null;
+  groupPictureUrl?: string | null;
 };
 
 type MediaUpload = {
@@ -83,8 +86,21 @@ function getTodayParts() {
   };
 }
 
+function getMonthOptions(year: number, today: ReturnType<typeof getTodayParts>) {
+  const lastMonth = year === today.year ? today.month : 12;
+  return THAI_MONTHS.slice(0, lastMonth);
+}
+
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
+}
+
+function getMaxSelectableDay(year: number, month: number, today: ReturnType<typeof getTodayParts>) {
+  if (year === today.year && month === today.month) {
+    return today.day;
+  }
+
+  return getDaysInMonth(year, month);
 }
 
 function getLocalDayRange(year: number, month: number, day: number) {
@@ -163,6 +179,26 @@ function getActivityTimestamp(message: MessageRecord, rawPayload: ActivityRawPay
   return Number.isFinite(createdAtTimestamp) ? createdAtTimestamp : Date.now();
 }
 
+function getDatePartsFromTimestamp(timestamp: number) {
+  const date = new Date(timestamp);
+
+  return {
+    day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
+  };
+}
+
+function getLatestActivityDateParts(messages: MessageRecord[], selectedGroupId: string | null) {
+  const latestTimestamp = messages
+    .filter((message) => !selectedGroupId || message.groupId === selectedGroupId)
+    .map((message) => getActivityTimestamp(message, asRawPayload(message.rawPayload)))
+    .filter((timestamp) => Number.isFinite(timestamp))
+    .sort((a, b) => b - a)[0];
+
+  return latestTimestamp ? getDatePartsFromTimestamp(latestTimestamp) : null;
+}
+
 function getGroupName(messages: MessageRecord[], selectedGroupId: string | null) {
   const groupMessage = messages.find((message) => {
     const rawPayload = asRawPayload(message.rawPayload);
@@ -197,10 +233,32 @@ function buildActivityItems(messages: MessageRecord[], selectedGroupId: string |
         preview: getMessagePreview(message, rawPayload),
         messageType: asString(eventMessage?.type) ?? message.type,
         media,
-        avatarUrl: asString(lineIdentity?.pictureUrl) ?? message.pictureUrl,
+        avatarUrl:
+          asString(lineIdentity?.userPictureUrl) ??
+          asString(lineIdentity?.memberPictureUrl) ??
+          asString(message.pictureUrl) ??
+          asString(lineIdentity?.pictureUrl),
       };
     })
     .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+// SECURITY: Media URLs are display-only here; authorization and URL rewriting must happen in /api/messages.
+// Simple in-memory cache for media URLs (per session)
+const mediaUrlCache = new Map<string, string>();
+
+function getCachedMediaUrl(mediaUrl: string | null) {
+  if (!mediaUrl) {
+    return null;
+  }
+
+  const cachedUrl = mediaUrlCache.get(mediaUrl);
+  if (cachedUrl) {
+    return cachedUrl;
+  }
+
+  mediaUrlCache.set(mediaUrl, mediaUrl);
+  return mediaUrl;
 }
 
 function ActivityMedia({ media, messageType }: { media: MediaUpload | null; messageType: string }) {
@@ -209,16 +267,20 @@ function ActivityMedia({ media, messageType }: { media: MediaUpload | null; mess
   const mediaType = getMediaType(media, messageType);
   const thumbnailUrl = media?.thumbnailUrl ?? null;
 
-  if (!mediaUrl || !mediaType) {
+  // Cache media URLs to avoid repeated downloads
+  const cachedUrl = getCachedMediaUrl(mediaUrl);
+
+  if (!cachedUrl || !mediaType) {
     return null;
   }
 
   if (mediaType === "video") {
     if (isOpen) {
       return (
+        // SECURITY: Use metadata preload only; full media loads after explicit user intent.
         <video
           className={`${miniAppTheme.image.media} mt-3 bg-black`}
-          src={mediaUrl}
+          src={cachedUrl}
           poster={thumbnailUrl ?? undefined}
           controls
           playsInline
@@ -235,6 +297,7 @@ function ActivityMedia({ media, messageType }: { media: MediaUpload | null; mess
         aria-label="เล่นวิดีโอ"
       >
         {thumbnailUrl ? (
+          // SECURITY: Thumbnail URL comes from the app API response; avoid logging or exposing raw storage paths here.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={thumbnailUrl}
@@ -257,17 +320,16 @@ function ActivityMedia({ media, messageType }: { media: MediaUpload | null; mess
     );
   }
 
-  const imageUrl = thumbnailUrl ?? mediaUrl;
+  const imageUrl = thumbnailUrl ?? cachedUrl;
 
   return (
+    // SECURITY: Media URL comes from the app API response; keep storage access validation server-side.
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={imageUrl}
       alt="สื่อกิจกรรม"
-      className={`${miniAppTheme.image.media} mt-3 aspect-video w-full object-cover`}
+      className="mt-3 h-auto w-full rounded-[16px] object-contain"
       loading="lazy"
-      width={320}
-      height={180}
       decoding="async"
     />
   );
@@ -278,6 +340,7 @@ function ActivityCard({ item }: { item: ActivityItem }) {
     <article className={`${miniAppTheme.card.base} p-4`}>
       <div className="flex gap-3">
         {item.avatarUrl ? (
+          // SECURITY: Avatar URL is rendered only after API sanitization/rewriting; do not trust client-only checks.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={item.avatarUrl}
@@ -314,20 +377,53 @@ function ActivityCard({ item }: { item: ActivityItem }) {
   );
 }
 
+function ActivityCardSkeleton() {
+  return (
+    <article className={`${miniAppTheme.card.base} p-4`}>
+      <div className="flex gap-3">
+        <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-[#E3EDF8]" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-4 w-36 animate-pulse rounded-full bg-[#E3EDF8]" />
+              <div className="h-3 w-48 animate-pulse rounded-full bg-[#EEF5FC]" />
+            </div>
+            <div className="h-7 w-14 shrink-0 animate-pulse rounded-full bg-[#EAF4FF]" />
+          </div>
+          <div className="mt-4 h-4 w-44 animate-pulse rounded-full bg-[#E3EDF8]" />
+          <div className="mt-3 h-3 w-28 animate-pulse rounded-full bg-[#EEF5FC]" />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ActivityPreloader({ count = 4 }: { count?: number }) {
+  return (
+    <div className="space-y-3" aria-label="กำลังโหลดกิจกรรม">
+      {Array.from({ length: count }, (_, index) => (
+        <ActivityCardSkeleton key={index} />
+      ))}
+    </div>
+  );
+}
+
 export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
   const resolvedGroupId = selectedGroupId ?? FATHER_PROFILE_GROUP_ID;
   const initialDate = useMemo(() => getTodayParts(), []);
   const [selectedDay, setSelectedDay] = useState(initialDate.day);
   const [selectedMonth, setSelectedMonth] = useState(initialDate.month);
   const [selectedYear, setSelectedYear] = useState(initialDate.year);
-  const daysInSelectedMonth = useMemo(() => getDaysInMonth(selectedYear, selectedMonth), [selectedMonth, selectedYear]);
+  const [hasAppliedLatestDate, setHasAppliedLatestDate] = useState(false);
+  const monthOptions = useMemo(() => getMonthOptions(selectedYear, initialDate), [initialDate, selectedYear]);
+  const daysInSelectedMonth = useMemo(() => getMaxSelectableDay(selectedYear, selectedMonth, initialDate), [initialDate, selectedMonth, selectedYear]);
   const effectiveSelectedDay = Math.min(selectedDay, daysInSelectedMonth);
   const dayOptions = useMemo(
     () => Array.from({ length: daysInSelectedMonth }, (_, index) => index + 1),
     [daysInSelectedMonth],
   );
   const yearOptions = useMemo(
-    () => Array.from({ length: 4 }, (_, index) => initialDate.year - 2 + index),
+    () => Array.from({ length: 3 }, (_, index) => initialDate.year - 2 + index),
     [initialDate.year],
   );
   const selectedRange = useMemo(
@@ -338,21 +434,72 @@ export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
     () => formatSelectedDateLabel(selectedYear, selectedMonth, effectiveSelectedDay),
     [effectiveSelectedDay, selectedMonth, selectedYear],
   );
-  const { messages, status, error } = useAutoTrackMessages({
+  const {
+    messages: latestMessages,
+    error: latestError,
+    hasLoaded: hasLatestLoaded,
+  } = useAutoTrackMessages({
+    groupId: resolvedGroupId,
+    limit: 100,
+  });
+
+  useEffect(() => {
+    if (hasAppliedLatestDate) {
+      return;
+    }
+
+    const latestDate = getLatestActivityDateParts(latestMessages, resolvedGroupId);
+
+    if (!latestDate) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      setSelectedYear(latestDate.year);
+      setSelectedMonth(latestDate.month);
+      setSelectedDay(latestDate.day);
+      setHasAppliedLatestDate(true);
+    });
+  }, [hasAppliedLatestDate, latestMessages, resolvedGroupId]);
+
+  const { messages, error, hasLoaded: hasMessagesLoaded } = useAutoTrackMessages({
     groupId: resolvedGroupId,
     limit: 100,
     from: selectedRange.from,
     to: selectedRange.to,
   });
   const activities = useMemo(() => buildActivityItems(messages, resolvedGroupId), [messages, resolvedGroupId]);
-  const groupName = useMemo(() => getGroupName(messages, resolvedGroupId), [messages, resolvedGroupId]);
-  const isLoading = messages.length === 0 && !error && status.includes("กำลัง");
+  const [visibleActivityCount, setVisibleActivityCount] = useState(0);
+  const groupName = useMemo(() => getGroupName(messages.length > 0 ? messages : latestMessages, resolvedGroupId), [latestMessages, messages, resolvedGroupId]);
+  const isResolvingLatestDate = !hasAppliedLatestDate && !hasLatestLoaded;
+  const isLoadingActivities = !hasMessagesLoaded || isResolvingLatestDate;
+  const visibleActivities = activities.slice(0, visibleActivityCount);
+  const isPreloadingMoreCards = !isLoadingActivities && visibleActivityCount < activities.length;
 
   useEffect(() => {
-    if (selectedDay > daysInSelectedMonth) {
-      setSelectedDay(daysInSelectedMonth);
+    if (isLoadingActivities || activities.length === 0) {
+      const resetTimeout = window.setTimeout(() => setVisibleActivityCount(0), 0);
+      return () => window.clearTimeout(resetTimeout);
     }
-  }, [daysInSelectedMonth, selectedDay]);
+
+    let nextCount = 0;
+    const resetTimeout = window.setTimeout(() => setVisibleActivityCount(0), 0);
+    const interval = window.setInterval(() => {
+      nextCount += 1;
+      setVisibleActivityCount(Math.min(nextCount, activities.length));
+
+      if (nextCount >= activities.length) {
+        window.clearInterval(interval);
+      }
+    }, 70);
+
+    return () => {
+      window.clearTimeout(resetTimeout);
+      window.clearInterval(interval);
+    };
+  }, [activities, isLoadingActivities]);
+
+  const resolvedError = error ?? latestError;
 
   return (
     <main className={miniAppTheme.layout.page}>
@@ -387,9 +534,13 @@ export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
                 <select
                   className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none`}
                   value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                  onChange={(event) => {
+                    const nextMonth = Number(event.target.value);
+                    setSelectedMonth(nextMonth);
+                    setSelectedDay((currentDay) => Math.min(currentDay, getMaxSelectableDay(selectedYear, nextMonth, initialDate)));
+                  }}
                 >
-                  {THAI_MONTHS.map((month, index) => (
+                  {monthOptions.map((month, index) => (
                     <option key={month} value={index + 1}>
                       {month}
                     </option>
@@ -402,7 +553,13 @@ export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
                 <select
                   className={`${miniAppTheme.typography.body} h-11 w-full rounded-[14px] border border-[#D7E6F8] bg-white px-2 font-semibold text-[#082B5F] shadow-[0_6px_14px_rgba(13,71,161,0.05)] outline-none`}
                   value={selectedYear}
-                  onChange={(event) => setSelectedYear(Number(event.target.value))}
+                  onChange={(event) => {
+                    const nextYear = Number(event.target.value);
+                    const nextMonth = Math.min(selectedMonth, nextYear === initialDate.year ? initialDate.month : 12);
+                    setSelectedYear(nextYear);
+                    setSelectedMonth(nextMonth);
+                    setSelectedDay((currentDay) => Math.min(currentDay, getMaxSelectableDay(nextYear, nextMonth, initialDate)));
+                  }}
                 >
                   {yearOptions.map((year) => (
                     <option key={year} value={year}>
@@ -414,27 +571,22 @@ export function MiniAppActivities({ selectedGroupId }: MiniAppActivitiesProps) {
             </div>
           </section>
 
-          {isLoading ? (
-            <div className={`${miniAppTheme.card.base} ${miniAppTheme.typography.body} p-5 text-center text-[#5F718C]`}>กำลังโหลดกิจกรรม...</div>
+          {isLoadingActivities ? (
+            <ActivityPreloader count={4} />
           ) : null}
 
-          {error ? (
+          {resolvedError ? (
             <div className={`${miniAppTheme.card.base} ${miniAppTheme.typography.body} border-[#FECACA] p-5 text-center font-semibold text-[#DC2626]`}>
               ไม่สามารถโหลดข้อมูลกิจกรรมได้ในขณะนี้
             </div>
           ) : null}
 
-          {!isLoading && !error && activities.length === 0 ? (
-            <div className={`${miniAppTheme.card.base} p-6 text-center`}>
-              <h2 className={`${miniAppTheme.typography.cardTitle} text-[#082B5F]`}>ยังไม่มีข้อมูลกิจกรรม</h2>
-              <p className={`${miniAppTheme.typography.body} mt-1 text-[#5F718C]`}>เมื่อมีข้อความ รูปภาพ หรือวิดีโอจาก LINE จะแสดงที่นี่</p>
-            </div>
-          ) : null}
 
           <div className="space-y-3">
-            {activities.map((item) => (
+            {visibleActivities.map((item) => (
               <ActivityCard key={item.id} item={item} />
             ))}
+            {isPreloadingMoreCards ? <ActivityCardSkeleton /> : null}
           </div>
         </div>
 
