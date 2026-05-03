@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { prisma } from "@/lib/prisma";
-import { getSupabaseStorageClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { buildStoragePublicUrl } from "@/lib/supabase/storage-url";
 import { analyzeCareImage, type CareImageAnalysis } from "@/lib/analyze-care-image";
 import { buildHealthReport, extractTimedVitalsSamples, type TimedVitalsSample } from "@/lib/health-report";
@@ -730,8 +730,8 @@ async function uploadLineMediaContent(
       mediaType: mediaType ?? null,
     });
 
-    const storage = getSupabaseStorageClient();
-    const uploadResult = await storage.from(bucketName).upload(filePath, fileBuffer, {
+    const supabaseAdmin = getSupabaseAdminClient();
+    const uploadResult = await supabaseAdmin.storage.from(bucketName).upload(filePath, fileBuffer, {
       contentType,
       upsert: false,
       cacheControl: LINE_MEDIA_CACHE_CONTROL_SECONDS,
