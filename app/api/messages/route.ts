@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import { getDatabaseSetupMessage, hasValidDatabaseUrl } from "@/lib/env";
@@ -35,7 +35,8 @@ type MessageRow = {
   importBatchId: string | null;
 };
 
-const PRIVATE_LIST_CACHE = "private, no-store, max-age=0";
+const PRIVATE_LIST_CACHE = "private, max-age=60, stale-while-revalidate=300";
+const MUTATION_CACHE = "private, no-store, max-age=0";
 const DEFAULT_MESSAGE_LIMIT = 500;
 const MAX_MESSAGE_LIMIT = 500;
 
@@ -45,6 +46,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function buildResponseEtag(value: unknown) {
+  const hash = createHash("sha256").update(JSON.stringify(value)).digest("base64url");
+
+  return `"messages-${hash}"`;
 }
 
 function buildLeanRawPayload(message: MessageRow) {
@@ -259,13 +266,28 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
-    return NextResponse.json(
-      {
-        messages: publicMessages,
-        configured: true,
+    const responseBody = {
+      messages: publicMessages,
+      configured: true,
+    };
+    const etag = buildResponseEtag(responseBody);
+
+    if (request.headers.get("if-none-match") === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          "Cache-Control": PRIVATE_LIST_CACHE,
+          ETag: etag,
+        },
+      });
+    }
+
+    return NextResponse.json(responseBody, {
+      headers: {
+        "Cache-Control": PRIVATE_LIST_CACHE,
+        ETag: etag,
       },
-      { headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
-    );
+    });
   } catch (error) {
     console.error("Failed to fetch messages", error);
     return NextResponse.json(
@@ -281,7 +303,7 @@ export async function POST(request: Request) {
       {
         error: getDatabaseSetupMessage(),
       },
-      { status: 503, headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
+      { status: 503, headers: { "Cache-Control": MUTATION_CACHE } },
     );
   }
 
@@ -304,7 +326,7 @@ export async function POST(request: Request) {
     if (!body.userId && !body.text) {
       return NextResponse.json(
         { error: "userId or text is required to store a message event" },
-        { status: 400, headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
+        { status: 400, headers: { "Cache-Control": MUTATION_CACHE } },
       );
     }
 
@@ -341,13 +363,13 @@ export async function POST(request: Request) {
           timestamp: savedMessage.timestamp.toString(),
         },
       },
-      { headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
+      { headers: { "Cache-Control": MUTATION_CACHE } },
     );
   } catch (error) {
     console.error("Failed to store LIFF message event", error);
     return NextResponse.json(
       { error: "Failed to store message event" },
-      { status: 500, headers: { "Cache-Control": PRIVATE_LIST_CACHE } },
+      { status: 500, headers: { "Cache-Control": MUTATION_CACHE } },
     );
   }
 }

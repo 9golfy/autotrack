@@ -441,6 +441,15 @@ type AutoTrackMessagesOptions = {
   to?: number | null;
 };
 
+type MessagesResponse = {
+  messages: MessageRecord[];
+  configured?: boolean;
+  setupMessage?: string;
+};
+
+const MESSAGE_CACHE_STALE_MS = 5 * 60 * 1000;
+const messageResponseCache = new Map<string, { fetchedAt: number; data: MessagesResponse }>();
+
 export function useAutoTrackMessages(options: AutoTrackMessagesOptions = {}) {
   const [messages, setMessages] = useState<MessageRecord[]>([]);
   const [status, setStatus] = useState("กำลังรอข้อมูลจากกลุ่ม LINE");
@@ -470,36 +479,48 @@ export function useAutoTrackMessages(options: AutoTrackMessagesOptions = {}) {
 
     const messagesUrl = params.size > 0 ? `/api/messages?${params.toString()}` : "/api/messages";
 
+    function applyMessagesData(data: MessagesResponse) {
+      setMessages(data.messages);
+      setHasLoaded(true);
+      setError(null);
+      setSetupMessage(data.configured === false ? data.setupMessage ?? null : null);
+      setStatus(
+        data.messages.length > 0
+          ? `ซิงก์ล่าสุด ${formatDateTime(Number(data.messages[0].timestamp))}`
+          : data.configured === false
+            ? "ยังไม่ได้ตั้งค่าฐานข้อมูล"
+            : "ยังไม่มีข้อมูลจากกลุ่ม",
+      );
+    }
+
     async function loadMessages() {
       try {
-        const refreshUrl = `${messagesUrl}${messagesUrl.includes("?") ? "&" : "?"}_=${Date.now()}`;
-        const response = await fetch(refreshUrl, { cache: "no-store" });
+        const cachedResponse = messageResponseCache.get(messagesUrl);
+        const cacheAge = cachedResponse ? Date.now() - cachedResponse.fetchedAt : Number.POSITIVE_INFINITY;
+
+        if (cachedResponse && cacheAge < MESSAGE_CACHE_STALE_MS) {
+          applyMessagesData(cachedResponse.data);
+          return;
+        }
+
+        if (cachedResponse) {
+          applyMessagesData(cachedResponse.data);
+        }
+
+        const response = await fetch(messagesUrl, { cache: "default" });
 
         if (!response.ok) {
           throw new Error("Unable to load messages");
         }
 
-        const data = (await response.json()) as {
-          messages: MessageRecord[];
-          configured?: boolean;
-          setupMessage?: string;
-        };
+        const data = (await response.json()) as MessagesResponse;
 
         if (!isMounted) {
           return;
         }
 
-        setMessages(data.messages);
-        setHasLoaded(true);
-        setError(null);
-        setSetupMessage(data.configured === false ? data.setupMessage ?? null : null);
-        setStatus(
-          data.messages.length > 0
-            ? `ซิงก์ล่าสุด ${formatDateTime(Number(data.messages[0].timestamp))}`
-            : data.configured === false
-              ? "ยังไม่ได้ตั้งค่าฐานข้อมูล"
-              : "ยังไม่มีข้อมูลจากกลุ่ม",
-        );
+        messageResponseCache.set(messagesUrl, { fetchedAt: Date.now(), data });
+        applyMessagesData(data);
       } catch (loadError) {
         if (!isMounted) {
           return;

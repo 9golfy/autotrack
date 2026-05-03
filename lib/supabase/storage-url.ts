@@ -4,6 +4,17 @@ function trimSlashes(value: string) {
   return value.replace(/^\/+|\/+$/g, "");
 }
 
+function getStorageV1Base(value: string) {
+  const base = value.replace(/\/+$/g, "");
+  const storageV1Index = base.indexOf("/storage/v1");
+
+  if (storageV1Index >= 0) {
+    return base.slice(0, storageV1Index + "/storage/v1".length);
+  }
+
+  return base;
+}
+
 export function getStorageEndpoint() {
   return (
     process.env.SUPABASE_STORAGE_ENDPOINT ??
@@ -20,8 +31,7 @@ export function getStorageRestEndpoint() {
     return "";
   }
 
-  const base = endpoint.replace(/\/+$/g, "");
-  const restBase = base.endsWith("/storage/v1/s3") ? base.slice(0, -"/s3".length) : base;
+  const restBase = getStorageV1Base(endpoint);
 
   try {
     const parsed = new URL(restBase);
@@ -54,11 +64,7 @@ export function buildStoragePublicUrl(path: string | null | undefined, bucketNam
     return path;
   }
 
-  const base = publicBase.replace(/\/+$/g, "");
-
-  if (base.endsWith("/storage/v1/s3")) {
-    return `${base.slice(0, -"/storage/v1/s3".length)}/storage/v1/object/public/${safeBucket}/${safePath}`;
-  }
+  const base = getStorageV1Base(publicBase);
 
   if (base.endsWith("/storage/v1")) {
     return `${base}/object/public/${safeBucket}/${safePath}`;

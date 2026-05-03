@@ -284,7 +284,7 @@ function ActivityMedia({ media, messageType }: { media: MediaUpload | null; mess
           poster={thumbnailUrl ?? undefined}
           controls
           playsInline
-          preload="metadata"
+          preload="none"
         />
       );
     }

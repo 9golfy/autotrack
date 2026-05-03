@@ -907,10 +907,8 @@ function MoodMetricCard({
     >
       <div className="flex items-start gap-2">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#EAF4FF]">
-          <div className="grid h-7 w-7 place-items-center rounded-full bg-white">
-            {/* SECURITY: Mood icons are fixed public Supabase asset URLs controlled by this app. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={MOOD_BY_LEVEL[4].imageSrc} alt="" className="h-6 w-6 object-contain" loading="lazy" decoding="async" />
+          <div className="grid h-7 w-7 place-items-center rounded-full bg-[#DFF4FF] text-[#1976D2]">
+            <Icon name="smile" className="h-5 w-5" />
           </div>
         </div>
 

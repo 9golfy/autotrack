@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 
 import { prisma } from "@/lib/prisma";
 import { getSupabaseStorageClient } from "@/lib/supabase/admin";
@@ -56,6 +57,9 @@ type UploadedLineContent = {
   storagePath: string | null;
   fetchStatus: number | null;
   contentSizeBytes: number | null;
+  originalContentSizeBytes?: number | null;
+  originalContentMimeType?: string | null;
+  optimized?: boolean;
   error: string | null;
 };
 
@@ -99,6 +103,10 @@ type MediaAiAnalysis = CareImageAnalysis & {
     countsAsMealReceived: boolean;
   };
 };
+
+const LINE_MEDIA_CACHE_CONTROL_SECONDS = "31536000";
+const LINE_IMAGE_MAX_DIMENSION = 1280;
+const LINE_IMAGE_WEBP_QUALITY = 78;
 
 function verifySignature(body: string, signature: string | null) {
   const secret =
@@ -441,6 +449,68 @@ function getFileExtension(contentType: string) {
   }
 }
 
+function shouldOptimizeLineImage(contentType: string, mediaType: string | null | undefined) {
+  const normalizedType = contentType.split(";")[0].trim().toLowerCase();
+
+  return mediaType === "image" && ["image/jpeg", "image/png", "image/webp"].includes(normalizedType);
+}
+
+async function optimizeLineImageBuffer(
+  fileBuffer: Buffer,
+  contentType: string,
+  mediaType: string | null | undefined,
+) {
+  if (!shouldOptimizeLineImage(contentType, mediaType)) {
+    return {
+      buffer: fileBuffer,
+      contentType,
+      optimized: false,
+    };
+  }
+
+  try {
+    const optimizedBuffer = await sharp(fileBuffer, { animated: false })
+      .rotate()
+      .resize({
+        width: LINE_IMAGE_MAX_DIMENSION,
+        height: LINE_IMAGE_MAX_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({
+        quality: LINE_IMAGE_WEBP_QUALITY,
+        effort: 4,
+      })
+      .toBuffer();
+
+    if (optimizedBuffer.byteLength >= fileBuffer.byteLength) {
+      return {
+        buffer: fileBuffer,
+        contentType,
+        optimized: false,
+      };
+    }
+
+    return {
+      buffer: optimizedBuffer,
+      contentType: "image/webp",
+      optimized: true,
+    };
+  } catch (error) {
+    console.warn("Failed to optimize LINE image; uploading original media", {
+      contentType,
+      mediaType: mediaType ?? null,
+      error,
+    });
+
+    return {
+      buffer: fileBuffer,
+      contentType,
+      optimized: false,
+    };
+  }
+}
+
 function getLineMediaBucketName() {
   const bucketName = (
     process.env.SUPABASE_STORAGE_BUCKET ??
@@ -635,11 +705,15 @@ async function uploadLineMediaContent(
       };
     }
 
-    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-    const filePath = buildLineMediaPath(messageId, contentType, groupId);
+    const originalContentType = response.headers.get("content-type") ?? "application/octet-stream";
     const arrayBuffer = await response.arrayBuffer();
-    const fileBuffer = Buffer.from(arrayBuffer);
+    const originalFileBuffer = Buffer.from(arrayBuffer);
+    const optimizedMedia = await optimizeLineImageBuffer(originalFileBuffer, originalContentType, mediaType);
+    const contentType = optimizedMedia.contentType;
+    const fileBuffer = optimizedMedia.buffer;
+    const filePath = buildLineMediaPath(messageId, contentType, groupId);
     const contentSizeBytes = fileBuffer.byteLength;
+    const originalContentSizeBytes = originalFileBuffer.byteLength;
 
     // SECURITY: Store LINE binary content server-side using the service role key; never expose LINE content API tokens to clients.
     console.info("Uploading LINE media content", {
@@ -647,7 +721,10 @@ async function uploadLineMediaContent(
       bucketName,
       filePath,
       contentType,
+      originalContentType,
       contentSizeBytes,
+      originalContentSizeBytes,
+      optimized: optimizedMedia.optimized,
       mediaType: mediaType ?? null,
     });
 
@@ -655,7 +732,7 @@ async function uploadLineMediaContent(
     const uploadResult = await storage.from(bucketName).upload(filePath, fileBuffer, {
       contentType,
       upsert: false,
-      cacheControl: "604800",
+      cacheControl: LINE_MEDIA_CACHE_CONTROL_SECONDS,
     });
 
     if (uploadResult.error) {
@@ -674,6 +751,9 @@ async function uploadLineMediaContent(
         storagePath: filePath,
         fetchStatus: response.status,
         contentSizeBytes,
+        originalContentSizeBytes,
+        originalContentMimeType: originalContentType,
+        optimized: optimizedMedia.optimized,
         error: uploadResult.error.message,
       };
     }
@@ -684,7 +764,10 @@ async function uploadLineMediaContent(
       bucketName,
       filePath,
       contentType,
+      originalContentType,
       contentSizeBytes,
+      originalContentSizeBytes,
+      optimized: optimizedMedia.optimized,
       mediaType: mediaType ?? null,
     });
 
@@ -697,6 +780,9 @@ async function uploadLineMediaContent(
       storagePath: filePath,
       fetchStatus: response.status,
       contentSizeBytes,
+      originalContentSizeBytes,
+      originalContentMimeType: originalContentType,
+      optimized: optimizedMedia.optimized,
       error: null,
     };
   } catch (error) {
@@ -1048,75 +1134,74 @@ export async function POST(request: NextRequest) {
 
   if (messageEvents.length > 0) {
     try {
-      const uploadedContentByMessageId = new Map<string, UploadedLineContent>();
-      const mediaAiAnalysisByMessageId = new Map<string, MediaAiAnalysis>();
       const uploadedImageUrlBySourceKey = new Map<string, string>();
       const lineIdentityBySourceKey = new Map<string, ResolvedLineIdentity>();
+      const failedMessages: Array<{ messageId: string | null; type: string | null; error: string }> = [];
 
       for (const event of messageEvents) {
-        const sourceKey = [
-          event.source?.type ?? "unknown",
-          event.source?.groupId ?? "",
-          event.source?.roomId ?? "",
-          event.source?.userId ?? "",
-        ].join(":");
-
-        if (!lineIdentityBySourceKey.has(sourceKey)) {
-          lineIdentityBySourceKey.set(sourceKey, await resolveLineIdentity(event));
-        }
-
-        if (
-          event.message?.id &&
-          ["image", "video", "audio", "file"].includes(event.message.type ?? "")
-        ) {
-          console.info("Received LINE media message", {
-            messageId: event.message.id,
-            messageType: event.message.type,
-            sourceType: event.source?.type ?? null,
-            groupId: event.source?.groupId ?? null,
-            roomId: event.source?.roomId ?? null,
-          });
-
-          const uploadedContent = await uploadLineMediaContent(
-            event.message.id,
-            event.source?.groupId ?? event.source?.roomId,
-            event.message.type,
-          );
-          uploadedContentByMessageId.set(event.message.id, uploadedContent);
-
-          const mediaAiAnalysis = await analyzeUploadedLineMedia(event, uploadedContent);
-          if (mediaAiAnalysis) {
-            mediaAiAnalysisByMessageId.set(event.message.id, mediaAiAnalysis);
-          }
-
-          if (event.message.type === "image" && uploadedContent.contentUrl) {
-            uploadedImageUrlBySourceKey.set(sourceKey, uploadedContent.contentUrl);
-          }
-        }
-      }
-
-      await prisma.message.createMany({
-        data: messageEvents.map((event) => {
-          const uploadedContent = event.message?.id
-            ? uploadedContentByMessageId.get(event.message.id)
-            : undefined;
+        try {
           const sourceKey = [
             event.source?.type ?? "unknown",
             event.source?.groupId ?? "",
             event.source?.roomId ?? "",
             event.source?.userId ?? "",
           ].join(":");
+
+          if (!lineIdentityBySourceKey.has(sourceKey)) {
+            lineIdentityBySourceKey.set(sourceKey, await resolveLineIdentity(event));
+          }
+
+          let uploadedContent: UploadedLineContent | undefined;
+          let mediaAiAnalysis: MediaAiAnalysis | null = null;
+
+          if (
+            event.message?.id &&
+            ["image", "video", "audio", "file"].includes(event.message.type ?? "")
+          ) {
+            console.info("Received LINE media message", {
+              messageId: event.message.id,
+              messageType: event.message.type,
+              sourceType: event.source?.type ?? null,
+              groupId: event.source?.groupId ?? null,
+              roomId: event.source?.roomId ?? null,
+            });
+
+            uploadedContent = await uploadLineMediaContent(
+              event.message.id,
+              event.source?.groupId ?? event.source?.roomId,
+              event.message.type,
+            );
+
+            console.info("LINE media upload completed", {
+              messageId: event.message.id,
+              messageType: event.message.type,
+              ok: Boolean(uploadedContent.contentUrl),
+              error: uploadedContent.error,
+              storagePath: uploadedContent.storagePath,
+            });
+
+            mediaAiAnalysis = await analyzeUploadedLineMedia(event, uploadedContent);
+
+            console.info("LINE media AI analysis completed", {
+              messageId: event.message.id,
+              messageType: event.message.type,
+              ok: Boolean(mediaAiAnalysis),
+              category: mediaAiAnalysis?.category ?? null,
+            });
+
+            if (event.message.type === "image" && uploadedContent.contentUrl) {
+              uploadedImageUrlBySourceKey.set(sourceKey, uploadedContent.contentUrl);
+            }
+          }
+
           const lineIdentity = lineIdentityBySourceKey.get(sourceKey);
           const structuredFields = buildStructuredWebhookFields(event);
-          const mediaAiAnalysis = event.message?.id
-            ? mediaAiAnalysisByMessageId.get(event.message.id)
-            : undefined;
           const mediaAiContext = mediaAiAnalysis
             ? getMediaAiSupabaseContext(mediaAiAnalysis.category)
             : null;
           const context = structuredFields?.context ?? mediaAiContext ?? "other";
 
-          return {
+          const messageData = {
             messageId: event.message?.id ?? event.webhookEventId ?? randomUUID(),
             userId: event.source?.userId ?? null,
             groupId: event.source?.groupId ?? event.source?.roomId ?? null,
@@ -1165,6 +1250,9 @@ export async function POST(request: NextRequest) {
                       contentMimeType: uploadedContent?.contentMimeType ?? null,
                       fetchStatus: uploadedContent?.fetchStatus ?? null,
                       contentSizeBytes: uploadedContent?.contentSizeBytes ?? null,
+                      originalContentSizeBytes: uploadedContent?.originalContentSizeBytes ?? null,
+                      originalContentMimeType: uploadedContent?.originalContentMimeType ?? null,
+                      optimized: uploadedContent?.optimized ?? false,
                       error: uploadedContent?.error ?? null,
                     }
                   : null,
@@ -1172,30 +1260,57 @@ export async function POST(request: NextRequest) {
             },
             timestamp: BigInt(event.timestamp ?? Date.now()),
           };
-        }),
-        skipDuplicates: false,
-      });
 
-      for (const event of messageEvents) {
-        const sourceKey = [
-          event.source?.type ?? "unknown",
-          event.source?.groupId ?? "",
-          event.source?.roomId ?? "",
-          event.source?.userId ?? "",
-        ].join(":");
-        const imageUrl =
-          (event.message?.id
-            ? uploadedContentByMessageId.get(event.message.id)?.contentUrl
-            : null) ?? uploadedImageUrlBySourceKey.get(sourceKey) ?? null;
+          await prisma.message.upsert({
+            where: { messageId: messageData.messageId },
+            create: messageData,
+            update: messageData,
+          });
 
-        if (event.source?.type === "user") {
-          await replyWithHealthCard(event, request.nextUrl.origin, imageUrl);
-          continue;
+          console.info("Persisted LINE webhook message", {
+            messageId: messageData.messageId,
+            type: messageData.type,
+            uploadOk: uploadedContent ? Boolean(uploadedContent.contentUrl) : null,
+            aiOk: mediaAiAnalysis ? true : null,
+          });
+
+          const imageUrl =
+            uploadedContent?.contentUrl ?? uploadedImageUrlBySourceKey.get(sourceKey) ?? null;
+
+          if (event.source?.type === "user") {
+            await replyWithHealthCard(event, request.nextUrl.origin, imageUrl);
+            continue;
+          }
+
+          if (event.source?.groupId || event.source?.roomId) {
+            await pushHealthCardToLineTarget(event, request.nextUrl.origin, imageUrl);
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          failedMessages.push({
+            messageId: event.message?.id ?? event.webhookEventId ?? null,
+            type: event.message?.type ?? null,
+            error: errorMessage,
+          });
+          console.error("Failed to process LINE webhook message", {
+            messageId: event.message?.id ?? null,
+            messageType: event.message?.type ?? null,
+            error,
+          });
         }
+      }
 
-        if (event.source?.groupId || event.source?.roomId) {
-          await pushHealthCardToLineTarget(event, request.nextUrl.origin, imageUrl);
-        }
+      if (failedMessages.length === messageEvents.length) {
+        return NextResponse.json(
+          { error: "Failed to save webhook events", failedMessages },
+          { status: 500 },
+        );
+      }
+
+      if (failedMessages.length > 0) {
+        console.warn("Some LINE webhook messages failed but processing continued", {
+          failedMessages,
+        });
       }
     } catch (error) {
       console.error("Failed to persist LINE webhook events", error);
