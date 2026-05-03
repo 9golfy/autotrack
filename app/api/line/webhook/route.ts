@@ -258,15 +258,17 @@ function formatMediaAiSummary(analysis: MediaAiAnalysis) {
     unknown: "ไม่ทราบช่วงเวลากินยา",
   };
 
+  let summary = analysis.thaiSummary;
+
   if (analysis.category === "meal" && analysis.context.mealSlot) {
-    return `${mealLabelBySlot[analysis.context.mealSlot]}: ${analysis.thaiSummary}`;
+    summary = `${mealLabelBySlot[analysis.context.mealSlot]}: ${analysis.thaiSummary}`;
   }
 
   if (analysis.category === "medication" && analysis.context.medicationSlot) {
-    return `${medicationLabelBySlot[analysis.context.medicationSlot]}: ${analysis.thaiSummary}`;
+    summary = `${medicationLabelBySlot[analysis.context.medicationSlot]}: ${analysis.thaiSummary}`;
   }
 
-  return analysis.thaiSummary;
+  return `[AI] ${summary}`;
 }
 
 function addDays(date: Date, days: number) {

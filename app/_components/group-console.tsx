@@ -498,16 +498,12 @@ export function useAutoTrackMessages(options: AutoTrackMessagesOptions = {}) {
         const cachedResponse = messageResponseCache.get(messagesUrl);
         const cacheAge = cachedResponse ? Date.now() - cachedResponse.fetchedAt : Number.POSITIVE_INFINITY;
 
-        if (cachedResponse && cacheAge < MESSAGE_CACHE_STALE_MS) {
-          applyMessagesData(cachedResponse.data);
-          return;
-        }
-
         if (cachedResponse) {
           applyMessagesData(cachedResponse.data);
         }
 
-        const response = await fetch(messagesUrl, { cache: "default" });
+        const shouldUseConditionalCache = cachedResponse && cacheAge < MESSAGE_CACHE_STALE_MS;
+        const response = await fetch(messagesUrl, { cache: shouldUseConditionalCache ? "no-cache" : "default" });
 
         if (!response.ok) {
           throw new Error("Unable to load messages");

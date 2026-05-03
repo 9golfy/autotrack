@@ -695,6 +695,19 @@ type NutritionSummary = {
   dinner: boolean;
 };
 
+type HomeCategoryKey = "vitals" | "mood" | "nutrition" | "medication" | "activity" | "excretion";
+
+type HomeEnabledCategories = Record<HomeCategoryKey, boolean>;
+
+const DEFAULT_HOME_ENABLED_CATEGORIES: HomeEnabledCategories = {
+  vitals: true,
+  mood: true,
+  nutrition: true,
+  medication: true,
+  activity: true,
+  excretion: true,
+};
+
 type MedicationSlot = "morning" | "midday" | "evening" | "night";
 
 type MedicationSummary = Record<MedicationSlot, boolean>;
@@ -712,7 +725,7 @@ function NutritionMetricCard({
     { slot: "dinner", label: "เย็น", doneLabel: "ทานเย็นแล้ว" },
   ];
   const doneCount = meals.filter((meal) => summary[meal.slot]).length;
-  const value = doneCount === meals.length ? "ดี" : doneCount > 0 ? `${doneCount}/3 มื้อ` : "รอข้อมูล";
+  const value = doneCount === meals.length ? "ครบ 3 มื้อ" : doneCount > 0 ? `${doneCount}/3 มื้อ` : "รอข้อมูล";
 
   return (
     <Link
@@ -1283,12 +1296,14 @@ function LatestMetricGrid({
   moodSummary,
   nutritionSummary,
   medicationSummary,
+  enabledCategories,
 }: {
   selectedGroupId: string;
   latestVitals: LatestVitals;
   moodSummary: MoodSummary;
   nutritionSummary: NutritionSummary;
   medicationSummary: MedicationSummary;
+  enabledCategories: HomeEnabledCategories;
 }) {
   const group = encodeURIComponent(selectedGroupId);
   const metrics: LatestMetricCardProps[] = [
@@ -1345,7 +1360,7 @@ function LatestMetricGrid({
     {
       label: "อาหาร",
       english: "Nutrition",
-      value: "ดี",
+      value: "ครบ 3 มื้อ",
       unit: "ทานครบ",
       iconName: "food",
       iconClass: "bg-[#00C853] text-white",
@@ -1356,23 +1371,29 @@ function LatestMetricGrid({
 
   return (
     <section className="mb-4 grid grid-cols-2 gap-2">
-      {metrics
+      {enabledCategories.vitals ? metrics
         .filter((metric) => metric.english !== "Mood" && metric.english !== "Nutrition")
         .map((metric) => (
         <LatestMetricCard key={metric.label} {...metric} />
-      ))}
-      <MoodMetricCard
-        summary={moodSummary}
-        href={`/mini-app?view=activities&metric=mood&groupId=${group}`}
-      />
-      <NutritionMetricCard
-        summary={nutritionSummary}
-        href={`/mini-app?view=activities&metric=nutrition&groupId=${group}`}
-      />
-      <MedicationMetricCard
-        summary={medicationSummary}
-        href={`/mini-app?view=activities&metric=medication&groupId=${group}`}
-      />
+      )) : null}
+      {enabledCategories.mood ? (
+        <MoodMetricCard
+          summary={moodSummary}
+          href={`/mini-app?view=activities&metric=mood&groupId=${group}`}
+        />
+      ) : null}
+      {enabledCategories.nutrition ? (
+        <NutritionMetricCard
+          summary={nutritionSummary}
+          href={`/mini-app?view=activities&metric=nutrition&groupId=${group}`}
+        />
+      ) : null}
+      {enabledCategories.medication ? (
+        <MedicationMetricCard
+          summary={medicationSummary}
+          href={`/mini-app?view=activities&metric=medication&groupId=${group}`}
+        />
+      ) : null}
     </section>
   );
 }
@@ -1431,6 +1452,40 @@ function parseIsoDobParts(value: string) {
 function formatIsoDobValue(year: number, month: number, day: number) {
   const safeDay = Math.min(day, getDaysInMonth(year, month));
   return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function readHomeEnabledCategories(groupId: string): HomeEnabledCategories {
+  try {
+    const stored = window.localStorage.getItem(`mini-app-settings:${groupId}`);
+    const parsed = stored ? JSON.parse(stored) : null;
+    const storedCategories = isRecord(parsed) && isRecord(parsed.categories) ? parsed.categories : null;
+
+    if (!storedCategories) {
+      return DEFAULT_HOME_ENABLED_CATEGORIES;
+    }
+
+    return {
+      ...DEFAULT_HOME_ENABLED_CATEGORIES,
+      vitals: typeof storedCategories.vitals === "boolean" ? storedCategories.vitals : DEFAULT_HOME_ENABLED_CATEGORIES.vitals,
+      mood: typeof storedCategories.mood === "boolean" ? storedCategories.mood : DEFAULT_HOME_ENABLED_CATEGORIES.mood,
+      nutrition: typeof storedCategories.nutrition === "boolean" ? storedCategories.nutrition : DEFAULT_HOME_ENABLED_CATEGORIES.nutrition,
+      medication:
+        typeof storedCategories.medication === "boolean"
+          ? storedCategories.medication
+          : typeof storedCategories.medicine === "boolean"
+            ? storedCategories.medicine
+            : DEFAULT_HOME_ENABLED_CATEGORIES.medication,
+      activity:
+        typeof storedCategories.activity === "boolean"
+          ? storedCategories.activity
+          : typeof storedCategories.activityPhoto === "boolean"
+            ? storedCategories.activityPhoto
+            : DEFAULT_HOME_ENABLED_CATEGORIES.activity,
+      excretion: typeof storedCategories.excretion === "boolean" ? storedCategories.excretion : DEFAULT_HOME_ENABLED_CATEGORIES.excretion,
+    };
+  } catch {
+    return DEFAULT_HOME_ENABLED_CATEGORIES;
+  }
 }
 
 function EditDOBBottomSheet({
@@ -1501,6 +1556,9 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
     selectedGroupIdProp ?? searchParams.get("groupId") ?? FATHER_PROFILE_GROUP_ID;
 
   const { messages, hasLoaded } = useAutoTrackMessages({ groupId: selectedGroupId, limit: 500 });
+  const [enabledCategories, setEnabledCategories] = useState<HomeEnabledCategories>(
+    DEFAULT_HOME_ENABLED_CATEGORIES,
+  );
   const [lineGroupPictureUrl, setLineGroupPictureUrl] = useState<string | null>(
     null,
   );
@@ -1530,6 +1588,29 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
 
     return () => {
       isMounted = false;
+    };
+  }, [selectedGroupId]);
+
+  useEffect(() => {
+    const syncEnabledCategories = (event?: Event) => {
+      if (event instanceof CustomEvent && event.detail?.groupId && event.detail.groupId !== selectedGroupId) {
+        return;
+      }
+
+      setEnabledCategories(readHomeEnabledCategories(selectedGroupId));
+    };
+
+    syncEnabledCategories();
+    window.addEventListener("focus", syncEnabledCategories);
+    window.addEventListener("pageshow", syncEnabledCategories);
+    window.addEventListener("storage", syncEnabledCategories);
+    window.addEventListener("mini-app-settings-changed", syncEnabledCategories);
+
+    return () => {
+      window.removeEventListener("focus", syncEnabledCategories);
+      window.removeEventListener("pageshow", syncEnabledCategories);
+      window.removeEventListener("storage", syncEnabledCategories);
+      window.removeEventListener("mini-app-settings-changed", syncEnabledCategories);
     };
   }, [selectedGroupId]);
 
@@ -1602,7 +1683,7 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
             }}
           />
 
-          <MiniAppHomeAlertCard />
+          {enabledCategories.vitals ? <MiniAppHomeAlertCard /> : null}
           <h2 className="mb-2 mt-0 px-1 text-sm font-bold text-[#082B5F]">ข้อมูลสุขภาพล่าสุดวันนี้</h2>
           {hasLoaded ? (
             <LatestMetricGrid
@@ -1611,6 +1692,7 @@ export default function MiniAppIndex({ selectedGroupId: selectedGroupIdProp = nu
               moodSummary={moodSummary}
               nutritionSummary={nutritionSummary}
               medicationSummary={medicationSummary}
+              enabledCategories={enabledCategories}
             />
           ) : (
             <HomeMetricGridLoading />
