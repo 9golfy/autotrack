@@ -1118,11 +1118,12 @@ function ChatWindow({
     setIsSending(true);
     try {
       if (mediaFile) {
-        await fetch("/api/line/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: `[ไฟล์แนบ: ${mediaFile.name}]${trimmed ? `\n${trimmed}` : ""}`, targetId: groupId }),
-        });
+        // ส่งรูป/วิดีโอผ่าน /api/line/send-media ที่ upload ไป Supabase แล้วส่ง URL ให้ LINE
+        const formData = new FormData();
+        formData.set("file", mediaFile);
+        formData.set("targetId", groupId);
+        if (trimmed) formData.set("caption", trimmed);
+        await fetch("/api/line/send-media", { method: "POST", body: formData });
         setMediaFile(null);
       } else {
         await fetch("/api/line/send", {
