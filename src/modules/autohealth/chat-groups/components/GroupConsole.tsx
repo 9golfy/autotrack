@@ -5,7 +5,7 @@
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 
 import { buildHealthReport } from "@/services/health-report";
 import autoHealthLineLogo from "@/shared/assets/logo/Auto_Health_Line_Logo.png";
@@ -497,30 +497,35 @@ export function ConsoleShell({
   contentClassName?: string;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const activeNavItem = navItems.find((item) => item.activeMatch(pathname));
   const headerTitle = activeNavItem?.label ?? title;
   const headerIcon = activeNavItem?.icon ?? null;
 
+  useEffect(() => { setMounted(true); }, []);
+
+  // ก่อน mount ใช้ค่า default เพื่อให้ server/client HTML ตรงกัน
+  const collapsed = mounted ? isSidebarCollapsed : false;
+
   return (
     <main className="h-screen overflow-hidden bg-[#F5F7FB] text-slate-900">
       <div
         className="grid h-screen min-h-0"
-        style={{ gridTemplateColumns: isSidebarCollapsed ? "72px minmax(0,1fr)" : "220px minmax(0,1fr)" }}
-        suppressHydrationWarning
+        style={{ gridTemplateColumns: collapsed ? "72px minmax(0,1fr)" : "220px minmax(0,1fr)" }}
       >
         <aside className="relative min-h-0 border-r border-slate-200 bg-white">
           <button
             type="button"
             onClick={() => setIsSidebarCollapsed((current) => !current)}
             className="absolute -right-3 top-1/2 z-20 hidden h-9 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition hover:text-slate-700 lg:flex"
-            aria-label={isSidebarCollapsed ? "ขยายเมนูด้านซ้าย" : "ย่อเมนูด้านซ้าย"}
+            aria-label={collapsed ? "ขยายเมนูด้านซ้าย" : "ย่อเมนูด้านซ้าย"}
           >
-            {isSidebarCollapsed ? ">" : "<"}
+            {collapsed ? ">" : "<"}
           </button>
 
-          <div className={`flex h-full flex-col ${isSidebarCollapsed ? "px-3 py-6" : "px-5 py-6"}`}>
-            <LogoLockup collapsed={isSidebarCollapsed} />
+          <div className={`flex h-full flex-col ${collapsed ? "px-3 py-6" : "px-5 py-6"}`}>
+            <LogoLockup collapsed={collapsed} />
 
             <nav className="mt-7 space-y-2">
               {navItems.map((item, index) => {
@@ -530,7 +535,7 @@ export function ConsoleShell({
                   <Link
                     key={`${item.label}-${item.href}-${index}`}
                     href={item.href}
-                    className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                    className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} rounded-2xl px-4 py-3 text-sm font-medium transition ${
                       isActive
                         ? "bg-[#1D4ED8] text-white shadow-[0_8px_18px_rgba(29,78,216,0.18)]"
                         : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
@@ -547,22 +552,20 @@ export function ConsoleShell({
                           {item.icon}
                         </span>
                       </span>
-                      {!isSidebarCollapsed ? item.label : null}
+                      {!collapsed ? item.label : null}
                     </span>
                   </Link>
                 );
               })}
             </nav>
 
-    
-
             <div
-              className={`mt-auto flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] ${isSidebarCollapsed ? "justify-center" : ""}`}
+              className={`mt-auto flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] ${collapsed ? "justify-center" : ""}`}
             >
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#0D47A1] text-sm font-semibold text-white">
                 N
               </div>
-              {!isSidebarCollapsed ? (
+              {!collapsed ? (
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-950">Nattapong S.</p>
                   <p className="text-xs text-sky-600">Admin</p>
