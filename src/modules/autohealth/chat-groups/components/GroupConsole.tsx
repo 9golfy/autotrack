@@ -507,7 +507,7 @@ export function ConsoleShell({
       <div
         className="grid h-screen min-h-0"
         style={{ gridTemplateColumns: isSidebarCollapsed ? "72px minmax(0,1fr)" : "220px minmax(0,1fr)" }}
-
+        suppressHydrationWarning
       >
         <aside className="relative min-h-0 border-r border-slate-200 bg-white">
           <button
