@@ -1,7 +1,14 @@
-import { ChatGroupDetailScreen } from "@/modules/autohealth/chat-groups";
+"use client";
 
-export default async function AdminGroupDetailPage(props: PageProps<"/admin/groups/[groupId]">) {
-  const params = await props.params;
+import dynamic from "next/dynamic";
+import { useParams } from "next/navigation";
 
+const ChatGroupDetailScreen = dynamic(
+  () => import("@/modules/autohealth/chat-groups").then((m) => m.ChatGroupDetailScreen),
+  { ssr: false, loading: () => null },
+);
+
+export default function AdminGroupDetailPage() {
+  const params = useParams<{ groupId: string }>();
   return <ChatGroupDetailScreen groupId={params.groupId} />;
 }
