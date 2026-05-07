@@ -1,5 +1,14 @@
 ﻿import type { Metadata } from "next";
+import { Sarabun } from "next/font/google";
 import "./globals.css";
+
+const sarabun = Sarabun({
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800"],
+  style: ["normal", "italic"],
+  subsets: ["latin", "thai"],
+  display: "swap",
+  variable: "--font-sarabun",
+});
 
 export const metadata: Metadata = {
   title: "AutoTrack",
@@ -12,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+    <html lang="th" className={`h-full antialiased ${sarabun.variable}`} suppressHydrationWarning>
+      <body className={`min-h-full flex flex-col ${sarabun.className}`} suppressHydrationWarning>
         {children}
       </body>
     </html>
