@@ -1,0 +1,54 @@
+export type MessageRecord = {
+  id: string;
+  messageId: string;
+  userId: string | null;
+  groupId: string | null;
+  displayName: string | null;
+  email: string | null;
+  statusMessage: string | null;
+  pictureUrl: string | null;
+  avatarUrl?: string | null;
+  profileImageUrl?: string | null;
+  contentUrl: string | null;
+  contentMimeType: string | null;
+  mediaUrl?: string | null;
+  thumbnailUrl?: string | null;
+  mediaType?: "image" | "video" | "audio" | "file" | "text" | string | null;
+  contentType?: string | null;
+  source: string;
+  text: string | null;
+  type: string;
+  timestamp: string;
+  createdAt: string;
+  context?: string | null;
+  contexts?: string[] | null;
+  parsed?: unknown;
+  flexTemplate?: string | null;
+  confidence?: number | string | null;
+  importBatchId?: string | null;
+  rawPayload?: {
+    parsed?: unknown;
+    context?: string | null;
+    contexts?: string[] | null;
+    flexTemplate?: string | null;
+    lineIdentity?: {
+      groupName?: string | null;
+      error?: string | null;
+      pictureUrl?: string | null;
+      userPictureUrl?: string | null;
+      memberPictureUrl?: string | null;
+      groupPictureUrl?: string | null;
+    } | null;
+    mediaUpload?: {
+      publicUrl?: string | null;
+      url?: string | null;
+      mediaUrl?: string | null;
+      thumbnailUrl?: string | null;
+      mediaType?: "image" | "video" | "audio" | "file" | "text" | string | null;
+      contentType?: string | null;
+      contentMimeType?: string | null;
+      error?: string | null;
+    } | null;
+    aiAnalysis?: unknown;
+  } | null;
+};

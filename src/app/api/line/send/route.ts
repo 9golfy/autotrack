@@ -1,0 +1,105 @@
+﻿import axios from "axios";
+import { NextRequest, NextResponse } from "next/server";
+
+import { prisma } from "@/services/prisma";
+
+export const runtime = "nodejs";
+
+async function fetchGroupSummary(groupId: string, accessToken: string) {
+  try {
+    const res = await fetch(`https://api.line.me/v2/bot/group/${encodeURIComponent(groupId)}/summary`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { groupName?: string; pictureUrl?: string };
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const { message, targetId: bodyTargetId } = (await request.json().catch(() => ({ message: "" }))) as {
+    message?: string;
+    targetId?: string;
+  };
+
+  const trimmedMessage = message?.trim();
+
+  if (!trimmedMessage) {
+    return NextResponse.json({ error: "Message is required" }, { status: 400 });
+  }
+
+  const accessToken =
+    process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN ?? process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  // ใช้ targetId จาก request body ก่อน ถ้าไม่มีค่อย fallback ไป env
+  const targetId = bodyTargetId?.trim() || process.env.LINE_TARGET_ID;
+
+  if (!accessToken || !targetId) {
+    return NextResponse.json(
+      {
+        error:
+          "Missing LINE_MESSAGING_CHANNEL_ACCESS_TOKEN (or LINE_CHANNEL_ACCESS_TOKEN) or LINE_TARGET_ID",
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    await axios.post(
+      "https://api.line.me/v2/bot/message/push",
+      {
+        to: targetId,
+        messages: [
+          {
+            type: "text",
+            text: trimmedMessage,
+          },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    await prisma.message.create({
+      data: {
+        messageId: `outbound-${Date.now()}`,
+        userId: targetId,
+        // ถ้า targetId เป็น groupId (ขึ้นต้นด้วย C) ให้ set groupId ด้วย
+        groupId: targetId.startsWith("C") ? targetId : null,
+        displayName: "AutoHealth Bot",
+        source: "web",
+        text: trimmedMessage,
+        type: "outbound",
+        rawPayload: {
+          direction: "web-to-line",
+          to: targetId,
+          text: trimmedMessage,
+        },
+        timestamp: BigInt(Date.now()),
+      },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const lineError = error.response?.data;
+      console.error("LINE push API failed", lineError ?? error.message);
+
+      return NextResponse.json(
+        {
+          error: "Failed to send message to LINE",
+          details: lineError ?? error.message,
+        },
+        { status: error.response?.status ?? 500 },
+      );
+    }
+
+    console.error("Unexpected send API error", error);
+    return NextResponse.json({ error: "Unexpected server error" }, { status: 500 });
+  }
+}
