@@ -3,8 +3,8 @@
 import dynamic from "next/dynamic";
 
 const DashboardScreen = dynamic(
-  () => import("@/modules/autohealth/dashboard").then((m) => m.DashboardScreen),
-  { ssr: false, loading: () => null },
+  () => import("@/modules/autohealth/dashboard").then((m) => ({ default: m.DashboardScreen })),
+  { ssr: false },
 );
 
 export default function AdminDashboardPage() {

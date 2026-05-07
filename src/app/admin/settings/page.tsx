@@ -3,8 +3,8 @@
 import dynamic from "next/dynamic";
 
 const SettingsScreen = dynamic(
-  () => import("@/modules/autohealth/settings").then((m) => m.SettingsScreen),
-  { ssr: false, loading: () => null },
+  () => import("@/modules/autohealth/settings").then((m) => ({ default: m.SettingsScreen })),
+  { ssr: false },
 );
 
 export default function AdminSettingsPage() {

@@ -4,8 +4,8 @@ import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 
 const ChatGroupDetailScreen = dynamic(
-  () => import("@/modules/autohealth/chat-groups").then((m) => m.ChatGroupDetailScreen),
-  { ssr: false, loading: () => null },
+  () => import("@/modules/autohealth/chat-groups").then((m) => ({ default: m.ChatGroupDetailScreen })),
+  { ssr: false },
 );
 
 export default function AdminGroupDetailPage() {
